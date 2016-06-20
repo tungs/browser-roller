@@ -1,0 +1,10 @@
+{
+	"name":"browser-roller",
+  "version":"0.0.0-prealpha.1",
+  "author":"Steve Tung",
+  "dependencies": {
+    "rollup": "0.31",
+    "esprima": "2.7",
+    "d3": "3.5"
+  }
+}

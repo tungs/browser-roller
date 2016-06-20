@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset='utf-8' />
+    <title>Testing...</title>
+    <style>
+      #container{
+        position: absolute;
+        right: 0;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        margin: 5px 5px 5px 5px;
+      }
+
+      #inputPanel, #outputPanel{
+        position: absolute;
+        top: 30px;
+        bottom: 20px;
+      }
+      #inputPanel {
+        left: 0;        
+        width: 50%;
+      }
+      #outputPanel{
+        width: 50%;
+        right: 0;
+      }
+
+      #editor, #otherOptions, #output, #statusMessage, #toolbar, #editorPanel, #otherOptionsPanel, .panelHeader, .panelBody{
+        position: absolute;
+        left: 0;
+        right: 0;
+      }
+
+      #editorPanel{
+        top: 0px;
+        height: 70%;
+      }
+
+      .panelHeader {
+        font: 16px "Open Sans", sans-serif;
+        top: 0px;
+        height: 20px;        
+      }
+
+      .panelBody{
+        top: 20px;
+        bottom: 0;        
+      }
+
+      #otherOptionsPanel{
+        bottom: 0px;
+        height: 30%;
+      }
+
+      #toolbar{
+        top: 0;
+        height: 30px;
+      }
+      #statusMessage{
+        font: 16px "Open Sans", sans-serif;
+        bottom: 0;
+        height: 20px;
+      }
+
+    </style>
+  </head>
+  <body>
+    <div id="container">
+      <div id="toolbar">
+        <input size="12" placeholder="moduleName" id="moduleName"></input>
+        <select id="exportType">
+          <option value="umd">UMD</option>
+          <option value="iife">Globals</option>
+          <option value="es6">ES6</option>
+          <option value="amd">AMD</option>
+          <option value="cjs">CommonJS</option>
+        </select>
+        <button id="rollButton">Roll</button>
+      </div>
+      <div id="inputPanel">
+        <div id="editorPanel">
+          <div class="panelHeader">main.js</div>
+          <div class="panelBody" id="editor"></div>
+        </div>
+        <div id="otherOptionsPanel">
+          <div class="panelHeader">Other Options:</div>
+          <div class="panelBody" id="otherOptions"></div>
+        </div>
+      </div>
+      <div id="outputPanel">
+        <div class="panelHeader">Output:</div>
+        <div class="panelBody" id="output"></div>
+      </div>
+      <div id="statusMessage"></div>
+    </div>
+    <script src="./libs/d3.v3.min.js"></script>
+    <script src="./libs/esprima.js"></script>
+    <script src="./libs/rollup.browser.js"></script>
+    <script src="./js/npmloader.js"></script>
+    <script src="./js/npmroller.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.2.3/ace.js"></script>
+    <script>
+    // browserRoller.html prealpha; probably buggy
+    // Copyright (c) Steve Tung All Rights Reserved
+
+      var editor = ace.edit("editor");
+      var output = ace.edit("output");
+      var otherOptions = ace.edit("otherOptions");
+      var defaultModuleName = "myModule";
+      var defaultOtherOptions = '{\n}';
+      var statusMessage = document.getElementById("statusMessage");
+      var rollButton = document.getElementById("rollButton");
+      var exportType = document.getElementById("exportType");
+      var moduleName = document.getElementById("moduleName");
+
+      editor.setValue('export { select } from "d3-selection";\nexport { event } from "d3-selection";');
+      editor.getSession().setMode("ace/mode/javascript");
+      output.getSession().setMode("ace/mode/javascript");
+      otherOptions.getSession().setMode("ace/mode/json");
+      output.setReadOnly(true);
+
+      var restoreFromFragment = function(){
+        var restoredJSON = JSON.parse(decodeURIComponent(window.location.hash.replace("#", ""))||'{}');
+        editor.setValue(restoredJSON.mainjs || '', 1);
+        otherOptions.setValue(restoredJSON.otherOptions || '{\n}', -1),
+        moduleName.value = (restoredJSON.moduleName || defaultModuleName);
+        exportType.value = (restoredJSON.exportType || 'umd');
+      };
+
+      var saveToFragment = function(){
+        window.location.hash = encodeURIComponent(JSON.stringify({
+          mainjs: editor.getValue(),
+          otherOptions: otherOptions.getValue(),
+          moduleName: moduleName.value,
+          exportType: exportType.value
+        }));
+      };
+
+      var messenger = function(message){
+        statusMessage.innerHTML = message;
+      };
+      rollButton.addEventListener("click", function(){
+        saveToFragment();
+        var options = JSON.parse(otherOptions.getValue().trim() || '{}');
+        options.format = options.format || exportType.value;
+        options.moduleName = options.moduleName ||moduleName.value;
+
+        npmroller.roll({
+          configjs: editor.getValue(),
+          messenger: messenger,
+          external: options.external
+        }).then(function(bundle){
+          // console.log(bundle.imports);
+          // console.log(bundle.exports);
+          messenger('Finished Rolling!');
+          var generated = bundle.generate(options);
+          output.setValue(generated.code);
+        }).catch(function(error){
+          console.warn(error);
+        });
+      });
+
+      restoreFromFragment();
+    </script>
+  </body>
+</html>
