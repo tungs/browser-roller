@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset='utf-8' />
-    <title>Testing...</title>
+    <title>Browser Roller</title>
     <style>
       #container{
         position: absolute;
@@ -157,8 +157,9 @@
           messenger('Finished Rolling!');
           var generated = bundle.generate(options);
           output.setValue(generated.code);
-        }).catch(function(error){
-          console.warn(error);
+        }).catch(function(err){
+          messenger('Error: '+err.message);
+          console.warn(err);
         });
       });
 
