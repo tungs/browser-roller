@@ -3,15 +3,11 @@
 
 (function(root, factory){
 	var moduleName = 'npmloader';
-  var node_https, node_url, node_downloader;
-	if(typeof define === "function" && define.amd){
-		define(["d3","esprima"],function(d3, esprima){
-			return (root[moduleName] = factory(d3.text, esprima));
-		});
-	} else if(typeof module ==="object" && module.exports){    
+  var node_https, node_url, fileDownloader;
+  if(typeof module ==="object" && module.exports){ 
     node_https = require("https");
     node_url = require("url");
-    node_downloader = function(url, callback){
+    fileDownloader = function(url, callback){
       node_https.get(url, function(response){
         var redirectUrl;
         var messageArray=[];
@@ -25,15 +21,37 @@
         } else if(response.statusCode >= 300 && response.statusCode < 400) {
           redirectUrl = node_url.parse(url).protocol + "//" + node_url.parse(url).host + response.headers.location;
           console.log('redirecting', redirectUrl);
-          node_downloader(redirectUrl, callback);
+          fileDownloader(redirectUrl, callback);
         }
       }).on('error', function(error){
         callback(error, null);
       }).end();      
     };
-		module.exports = (root[moduleName] = factory(node_downloader, require("esprima")));
+  } else {
+    fileDownloader = function(url, callback){
+      var xhr = new XMLHttpRequest();
+      xhr.onreadystatechange = function () {
+        if (xhr.readyState > 3) {
+          if((xhr.status >= 200 && xhr.status < 300) || xhr.status === 304){
+            callback(null, xhr.responseText);
+          } else {
+            callback(new Error('Error Requesting '+url+'! Status: '+xhr.status), null);
+          }
+        }
+      };
+      xhr.open("GET", url);
+      xhr.send();
+      return xhr;
+    }    
+  }
+	if(typeof define === "function" && define.amd){
+		define(["esprima"],function(esprima){
+			return (root[moduleName] = factory(fileDownloader, esprima));
+		});
+	} else if(typeof module ==="object" && module.exports){    
+		module.exports = (root[moduleName] = factory(fileDownloader, require("esprima")));
 	} else {
-		root[moduleName] = factory(root["d3"].text, root["esprima"]);
+		root[moduleName] = factory(fileDownloader, root["esprima"]);
 	}
 }(this, function(fileDownloader, esprima){
 	var npmloader = {};
