@@ -10,6 +10,7 @@ self.addEventListener('message', function(e) {
 	if(type === "roll"){
       npmroller.roll({
         configjs: message.configjs,
+        preferredVersions: message.preferredVersions,
         messenger: messenger
       }).then(function(bundle){
         var code = bundle.generate({format:message.format, moduleName:message.moduleName}).code;

@@ -67,7 +67,7 @@
     <script>
     // d3Roller.html prealpha; probably buggy
     // Copyright (c) Steve Tung All Rights Reserved
-
+      var rollerWorker = new Worker("js/rollerWorker.js");
       var findParent = function(el, type, levels){
         if(!el){
           return null;
@@ -203,7 +203,6 @@
           .classed("symbolCheckbox", true)
           .on("click", function(){
             styleModuleCheckbox(findParent(this, "div", 2));
-//            styleModuleCheckbox(this.parentNode.parentNode.parentNode.parentNode.parentNode);
           });
         checkboxCells.append("label")
           .attr("for", function(d){return d.name+'-checkbox';})
@@ -211,6 +210,17 @@
 
         expandSpans.each(function(){
           d3.select(findParent(this, "div", 2)).select(".submoduleDiv").style("display", d3.select(this).text()===collapseText ? "block" : "none");
+        });
+
+        rollerWorker.addEventListener("message", function(e){
+          var type = e.data.type;
+          var message = e.data.message;
+          if(type==="messenger"){
+            d3.select("#statusMessage").html(message);
+          } else if(type==="rolled"){
+            d3.select("#output").property("value", message);
+            d3.select("#statusMessage").html("Finished Rolling!");
+          }
         });
 
         d3.select("#buildButton").on("click", function(){
@@ -230,22 +240,15 @@
           console.log(symbols);
           configjs = npmroller.generateConfigFromExports(symbols);
           console.log(configjs);
-          npmroller.roll({
-            configjs: configjs,
-            preferredVersions: preferredVersions,
-            messenger: function(message){
-              d3.select("#statusMessage").html(message);
-            }
-          }).then(function(bundle){
-            d3.select("#statusMessage").html("Finished Rolling!");
-            var generated = bundle.generate({
+
+          rollerWorker.postMessage({
+            type:"roll", 
+            message: {
+              configjs: configjs,
               format: format,
+              preferredVersions: preferredVersions,
               moduleName: "d3"
-            });
-            d3.select("#output").property("value", generated.code);
-          }).catch(function(err){
-            d3.select("#statusMessage").html("Error: "+err.message);            
-            console.warn(err);
+            }
           });
         });
       });
