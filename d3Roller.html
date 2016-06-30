@@ -86,7 +86,9 @@
         return par;
       };
 
-      d3.json("data/d3Info.json", function(err, info){
+
+      d3InfoLoader.loadModulesInfo({"d3-scale-chromatic": "latest"}, function(error, info){
+//      d3.json("data/d3Info.json", function(err, info){
       	var moduleDivs;
         var moduleHeaders;
         var moduleCheckboxSpans;
