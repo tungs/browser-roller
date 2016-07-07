@@ -4,7 +4,10 @@
 (function(root, factory){
 	var moduleName = 'npmloader';
   var node_https, node_url, fileDownloader;
-  if(typeof module ==="object" && module.exports){ 
+  if(typeof process === "object" &&
+    typeof process.versions === "object" &&
+    process.versions.node !== undefined) {
+    // in node environment
     node_https = require("https");
     node_url = require("url");
     fileDownloader = function(url, callback){
@@ -44,6 +47,7 @@
       return xhr;
     }    
   }
+
 	if(typeof define === "function" && define.amd){
 		define(["esprima"],function(esprima){
 			return (root[moduleName] = factory(fileDownloader, esprima));
@@ -79,7 +83,7 @@
       request = fileDownloader(fileUrl, function(error, text){
         if(error) // should have finer error handling
         {
-          console.log("Error Requesting File " + fileUrl, error);
+          console.warn("Error Requesting File " + fileUrl, error);
           if(!cancel) {
             callback(error, null);
 /*

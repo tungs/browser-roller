@@ -27,7 +27,7 @@
         right: 0;
       }
 
-      #editor, #otherOptions, #output, #statusMessage, #toolbar, #editorPanel, #otherOptionsPanel, .panelHeader, .panelBody{
+      #editor, #otherOptions, #output, #preferredVersions, #statusMessage, #toolbar, #optionsSection, #editorPanel, #otherOptionsPanel, #versionsPanel, .panelHeader, .panelBody{
         position: absolute;
         left: 0;
         right: 0;
@@ -35,7 +35,7 @@
 
       #editorPanel{
         top: 0px;
-        height: 70%;
+        height: 50%;
       }
 
       .panelHeader {
@@ -49,9 +49,19 @@
         bottom: 0;        
       }
 
+      #optionsSection {
+        bottom: 0px;
+        height: 50%;
+      }
+
+      #versionsPanel{
+        top: 0px;
+        height: 50%;        
+      }
+
       #otherOptionsPanel{
         bottom: 0px;
-        height: 30%;
+        height: 50%;
       }
 
       #toolbar{
@@ -84,9 +94,15 @@
           <div class="panelHeader">main.js</div>
           <div class="panelBody" id="editor"></div>
         </div>
-        <div id="otherOptionsPanel">
-          <div class="panelHeader">Other Options:</div>
-          <div class="panelBody" id="otherOptions"></div>
+        <div id="optionsSection">
+          <div id="versionsPanel">
+            <div class="panelHeader">Preferred Versions:</div>
+            <div class="panelBody" id="preferredVersions"></div>
+          </div>
+          <div id="otherOptionsPanel">
+            <div class="panelHeader">Other Options:</div>
+            <div class="panelBody" id="otherOptions"></div>
+          </div>
         </div>
       </div>
       <div id="outputPanel">
@@ -108,6 +124,7 @@
       var editor = ace.edit("editor");
       var output = ace.edit("output");
       var otherOptions = ace.edit("otherOptions");
+      var preferredVersions = ace.edit("preferredVersions");
       var defaultModuleName = "myModule";
       var defaultOtherOptions = '{\n}';
       var statusMessage = document.getElementById("statusMessage");
@@ -115,16 +132,17 @@
       var exportType = document.getElementById("exportType");
       var moduleName = document.getElementById("moduleName");
 
-      editor.setValue('export { select } from "d3-selection";\nexport { event } from "d3-selection";');
       editor.getSession().setMode("ace/mode/javascript");
       output.getSession().setMode("ace/mode/javascript");
+      preferredVersions.getSession().setMode("ace/mode/json");
       otherOptions.getSession().setMode("ace/mode/json");
       output.setReadOnly(true);
 
       var restoreFromFragment = function(){
-        var restoredJSON = JSON.parse(decodeURIComponent(window.location.hash.replace("#", ""))||'{}');
+        var restoredJSON = JSON.parse(decodeURIComponent(window.location.hash.replace("#", ""))||"{}");
         editor.setValue(restoredJSON.mainjs || '', 1);
         otherOptions.setValue(restoredJSON.otherOptions || '{\n}', -1),
+        preferredVersions.setValue(restoredJSON.preferredVersions || '{\n}', -1),
         moduleName.value = (restoredJSON.moduleName || defaultModuleName);
         exportType.value = (restoredJSON.exportType || 'umd');
       };
@@ -132,6 +150,7 @@
       var saveToFragment = function(){
         window.location.hash = encodeURIComponent(JSON.stringify({
           mainjs: editor.getValue(),
+          preferredVersions: preferredVersions.getValue(),
           otherOptions: otherOptions.getValue(),
           moduleName: moduleName.value,
           exportType: exportType.value
@@ -144,16 +163,16 @@
       rollButton.addEventListener("click", function(){
         saveToFragment();
         var options = JSON.parse(otherOptions.getValue().trim() || '{}');
+        var versions = JSON.parse(preferredVersions.getValue().trim() || '{}');
         options.format = options.format || exportType.value;
         options.moduleName = options.moduleName ||moduleName.value;
 
         npmroller.roll({
           configjs: editor.getValue(),
           messenger: messenger,
+          preferredVersions: versions,
           external: options.external
         }).then(function(bundle){
-          // console.log(bundle.imports);
-          // console.log(bundle.exports);
           messenger('Finished Rolling!');
           var generated = bundle.generate(options);
           output.setValue(generated.code);

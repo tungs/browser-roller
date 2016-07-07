@@ -604,7 +604,7 @@
   },
   {
     "name": "d3-scale-chromatic",
-    "version": "0.3.0",
+    "version": "1.0.0",
     "exportSymbols": [
       "schemeAccent",
       "schemeDark2",
@@ -643,7 +643,7 @@
       "interpolateOranges"
     ],
     "dependencies": {
-      "d3-interpolate": "~0.9.0"
+      "d3-interpolate": "1"
     }
   }
 ]
