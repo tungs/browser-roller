@@ -10,7 +10,7 @@
     root[moduleName] = factory(root["npmloader"]);
   }
 }(this, function(npmloader){
-  var mainPackageUrl = "https://npmcdn.com/d3@next/package.json"; // should change this to d3@latest when d3v4 launches
+  var mainPackageUrl = "https://npmcdn.com/d3@latest/package.json";
   var d3InfoLoader = {};
 
   var loadCoreModulesList = function(callback){
