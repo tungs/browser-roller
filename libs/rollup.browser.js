@@ -1,6 +1,6 @@
 /*
-	Rollup.js v0.31.2
-	Mon Jun 13 2016 12:40:31 GMT-0400 (EDT) - commit b3f63175913b65a88bee2120bf5463a09e4f6ce8
+	Rollup.js v0.34.1
+	Sun Jul 10 2016 22:47:55 GMT-0400 (EDT) - commit e275a9cd607d49df1f5a1d13bda897dd5b066b63
 
 
 	https://github.com/rollup/rollup
@@ -14,8 +14,6 @@
   (factory((global.rollup = global.rollup || {})));
 }(this, function (exports) { 'use strict';
 
-  // TODO does this all work on windows?
-
   var absolutePath = /^(?:\/|(?:[A-Za-z]:)?[\\|\/])/;
   var relativePath = /^\.?\.\//;
 
@@ -25,6 +23,10 @@
 
   function isRelative ( path ) {
   	return relativePath.test( path );
+  }
+
+  function normalize ( path ) {
+  	return path.replace( /\\/g, '/' );
   }
 
   function basename ( path ) {
@@ -76,7 +78,7 @@
 
   	var resolvedParts = paths.shift().split( /[\/\\]/ );
 
-  	paths.forEach( function ( path ) {
+  	paths.forEach( function (path) {
   		if ( isAbsolute( path ) ) {
   			resolvedParts = path.split( /[\/\\]/ );
   		} else {
@@ -96,7 +98,7 @@
   	return resolvedParts.join( '/' ); // TODO windows...
   }
 
-  var nope = function ( method ) { return ("Cannot use fs." + method + " inside browser"); };
+  var nope = function (method) { return ("Cannot use fs." + method + " inside browser"); };
 
   var isFile = function () { return false; };
   var readFileSync = nope( 'readFileSync' );
@@ -109,20 +111,37 @@
   }
 
   function forOwn ( object, func ) {
-  	Object.keys( object ).forEach( function ( key ) { return func( object[ key ], key ); } );
+  	Object.keys( object ).forEach( function (key) { return func( object[ key ], key ); } );
   }
 
   function assign ( target ) {
   	var sources = [], len = arguments.length - 1;
   	while ( len-- > 0 ) sources[ len ] = arguments[ len + 1 ];
 
-  	sources.forEach( function ( source ) {
+  	sources.forEach( function (source) {
   		for ( var key in source ) {
   			if ( source.hasOwnProperty( key ) ) target[ key ] = source[ key ];
   		}
   	});
 
   	return target;
+  }
+
+  function mapSequence ( array, fn ) {
+  	var results = [];
+  	var promise = Promise.resolve();
+
+  	function next ( member, i ) {
+  		return fn( member ).then( function (value) { return results[i] = value; } );
+  	}
+
+  	var loop = function ( i ) {
+  		promise = promise.then( function () { return next( array[i], i ); } );
+  	};
+
+  	for ( var i = 0; i < array.length; i += 1 ) loop( i );
+
+  	return promise.then( function () { return results; } );
   }
 
   function validateKeys ( object, allowedKeys ) {
@@ -437,7 +456,7 @@
 
   var nonWhitespace = /\S/;
 
-  function encodeMappings ( original, intro, chunk, hires, sourcemapLocations, sourceIndex, offsets, names ) {
+  function encodeMappings ( original, intro, outro, chunk, hires, sourcemapLocations, sourceIndex, offsets, names ) {
   	var rawLines = [];
 
   	var generatedCodeLine = intro.split( '\n' ).length - 1;
@@ -543,6 +562,8 @@
   	offsets.sourceCodeColumn = offsets.sourceCodeColumn || 0;
   	offsets.sourceCodeName = offsets.sourceCodeName || 0;
 
+  	var outroSemis = outro.split( '\n' ).map( function () { return ''; } ).join( ';' );
+
   	var encoded = rawLines.map( function (segments) {
   		var generatedCodeColumn = 0;
 
@@ -566,7 +587,7 @@
 
   			return encode( arr );
   		}).join( ',' );
-  	}).join( ';' );
+  	}).join( ';' ) + outroSemis;
 
   	return encoded;
   }
@@ -696,7 +717,7 @@
   	},
 
   	getMappings: function getMappings ( hires, sourceIndex, offsets, names ) {
-  		return encodeMappings( this.original, this.intro, this.firstChunk, hires, this.sourcemapLocations, sourceIndex, offsets, names );
+  		return encodeMappings( this.original, this.intro, this.outro, this.firstChunk, hires, this.sourcemapLocations, sourceIndex, offsets, names );
   	},
 
   	indent: function indent ( indentStr, options ) {
@@ -1385,11 +1406,19 @@
   		while ( len-- ) args[ len ] = arguments[ len ];
 
   		return candidates.reduce( function ( promise, candidate ) {
-  			return promise.then( function ( result ) { return result != null ?
+  			return promise.then( function (result) { return result != null ?
   				result :
   				Promise.resolve( candidate.apply( void 0, args ) ); } );
   		}, Promise.resolve() );
   	};
+  }
+
+  function find ( array, fn ) {
+  	for ( var i = 0; i < array.length; i += 1 ) {
+  		if ( fn( array[i], i ) ) return array[i];
+  	}
+
+  	return null;
   }
 
   // Reserved word lists for various dialects of the language
@@ -1501,7 +1530,7 @@
   var TokenType = function TokenType(label, conf) {
     if ( conf === void 0 ) conf = {};
 
-      this.label = label
+    this.label = label
     this.keyword = conf.keyword
     this.beforeExpr = !!conf.beforeExpr
     this.startsExpr = !!conf.startsExpr
@@ -1656,7 +1685,7 @@
     this.column = col
   };
 
-  Position.prototype.offset = function offset(n) {
+  Position.prototype.offset = function offset (n) {
     return new Position(this.line, this.column + n)
   };
 
@@ -1880,22 +1909,24 @@
   };
 
   // DEPRECATED Kept for backwards compatibility until 3.0 in case a plugin uses them
-  Parser.prototype.isKeyword = function isKeyword(word) { return this.keywords.test(word) };
-  Parser.prototype.isReservedWord = function isReservedWord(word) { return this.reservedWords.test(word) };
+  Parser.prototype.isKeyword = function isKeyword (word) { return this.keywords.test(word) };
+  Parser.prototype.isReservedWord = function isReservedWord (word) { return this.reservedWords.test(word) };
 
-  Parser.prototype.extend = function extend(name, f) {
+  Parser.prototype.extend = function extend (name, f) {
     this[name] = f(this[name])
   };
 
-  Parser.prototype.loadPlugins = function loadPlugins(pluginConfigs) {
+  Parser.prototype.loadPlugins = function loadPlugins (pluginConfigs) {
+      var this$1 = this;
+
     for (var name in pluginConfigs) {
       var plugin = plugins[name]
       if (!plugin) throw new Error("Plugin '" + name + "' not found")
-      plugin(this, pluginConfigs[name])
+      plugin(this$1, pluginConfigs[name])
     }
   };
 
-  Parser.prototype.parse = function parse() {
+  Parser.prototype.parse = function parse () {
     var node = this.options.program || this.startNode()
     this.nextToken()
     return this.parseTopLevel(node)
@@ -2019,7 +2050,7 @@
 
     var first = true
     if (!node.body) node.body = []
-    while (this$1.type !== tt.eof) {
+    while (this.type !== tt.eof) {
       var stmt = this$1.parseStatement(true, true)
       node.body.push(stmt)
       if (first) {
@@ -2037,15 +2068,13 @@
   var loopLabel = {kind: "loop"};
   var switchLabel = {kind: "switch"};
   pp$1.isLet = function() {
-    var this$1 = this;
-
     if (this.type !== tt.name || this.options.ecmaVersion < 6 || this.value != "let") return false
     skipWhiteSpace.lastIndex = this.pos
     var skip = skipWhiteSpace.exec(this.input)
     var next = this.pos + skip[0].length, nextCh = this.input.charCodeAt(next)
     if (nextCh === 91 || nextCh == 123) return true // '{' and '['
     if (isIdentifierStart(nextCh, true)) {
-      for (var pos = next + 1; isIdentifierChar(this$1.input.charCodeAt(pos, true)); ++pos) {}
+      for (var pos = next + 1; isIdentifierChar(this.input.charCodeAt(pos, true)); ++pos) {}
       var ident = this.input.slice(next, pos)
       if (!this.isKeyword(ident)) return true
     }
@@ -2132,7 +2161,7 @@
 
     // Verify that there is an actual destination to break or
     // continue to.
-    for (var i = 0; i < this$1.labels.length; ++i) {
+    for (var i = 0; i < this.labels.length; ++i) {
       var lab = this$1.labels[i]
       if (node.label == null || lab.name === node.label.name) {
         if (lab.kind != null && (isBreak || lab.kind === "loop")) break
@@ -2240,7 +2269,7 @@
     // nodes. `cur` is used to keep the node that we are currently
     // adding statements to.
 
-    for (var cur, sawDefault = false; this$1.type != tt.braceR;) {
+    for (var cur, sawDefault = false; this.type != tt.braceR;) {
       if (this$1.type === tt._case || this$1.type === tt._default) {
         var isCase = this$1.type === tt._case
         if (cur) this$1.finishNode(cur, "SwitchCase")
@@ -2331,10 +2360,10 @@
   pp$1.parseLabeledStatement = function(node, maybeName, expr) {
     var this$1 = this;
 
-    for (var i = 0; i < this$1.labels.length; ++i)
+    for (var i = 0; i < this.labels.length; ++i)
       if (this$1.labels[i].name === maybeName) this$1.raise(expr.start, "Label '" + maybeName + "' is already declared")
     var kind = this.type.isLoop ? "loop" : this.type === tt._switch ? "switch" : null
-    for (var i$1 = this$1.labels.length - 1; i$1 >= 0; i$1--) {
+    for (var i$1 = this.labels.length - 1; i$1 >= 0; i$1--) {
       var label = this$1.labels[i$1]
       if (label.statementStart == node.start) {
         label.statementStart = this$1.start
@@ -2364,7 +2393,7 @@
     var node = this.startNode(), first = true, oldStrict
     node.body = []
     this.expect(tt.braceL)
-    while (!this$1.eat(tt.braceR)) {
+    while (!this.eat(tt.braceR)) {
       var stmt = this$1.parseStatement(true)
       node.body.push(stmt)
       if (first && allowStrict && this$1.isUseStrict(stmt)) {
@@ -2472,7 +2501,7 @@
     var hadConstructor = false
     classBody.body = []
     this.expect(tt.braceL)
-    while (!this$1.eat(tt.braceR)) {
+    while (!this.eat(tt.braceR)) {
       if (this$1.eat(tt.semi)) continue
       var method = this$1.startNode()
       var isGenerator = this$1.eat(tt.star)
@@ -2487,7 +2516,7 @@
       method.kind = "method"
       var isGetSet = false
       if (!method.computed) {
-        var key = method.key
+        var key = method.key;
         if (!isGenerator && key.type === "Identifier" && this$1.type !== tt.parenL && (key.name === "get" || key.name === "set")) {
           isGetSet = true
           method.kind = key.name
@@ -2600,7 +2629,7 @@
     var nodes = [], first = true
     // export { x, y as z } [from '...']
     this.expect(tt.braceL)
-    while (!this$1.eat(tt.braceR)) {
+    while (!this.eat(tt.braceR)) {
       if (!first) {
         this$1.expect(tt.comma)
         if (this$1.afterTrailingComma(tt.braceR)) break
@@ -2655,7 +2684,7 @@
       return nodes
     }
     this.expect(tt.braceL)
-    while (!this$1.eat(tt.braceR)) {
+    while (!this.eat(tt.braceR)) {
       if (!first) {
         this$1.expect(tt.comma)
         if (this$1.afterTrailingComma(tt.braceR)) break
@@ -2809,7 +2838,7 @@
     var this$1 = this;
 
     var elts = [], first = true
-    while (!this$1.eat(close)) {
+    while (!this.eat(close)) {
       if (first) first = false
       else this$1.expect(tt.comma)
       if (allowEmpty && this$1.type === tt.comma) {
@@ -2907,13 +2936,14 @@
   pp$3.checkPropClash = function(prop, propHash) {
     if (this.options.ecmaVersion >= 6 && (prop.computed || prop.method || prop.shorthand))
       return
-    var key = prop.key, name
+    var key = prop.key;
+    var name
     switch (key.type) {
     case "Identifier": name = key.name; break
     case "Literal": name = String(key.value); break
     default: return
     }
-    var kind = prop.kind
+    var kind = prop.kind;
     if (this.options.ecmaVersion >= 6) {
       if (name === "__proto__" && kind === "init") {
         if (propHash.proto) this.raiseRecoverable(key.start, "Redefinition of __proto__ property")
@@ -2960,7 +2990,7 @@
     if (this.type === tt.comma) {
       var node = this.startNodeAt(startPos, startLoc)
       node.expressions = [expr]
-      while (this$1.eat(tt.comma)) node.expressions.push(this$1.parseMaybeAssign(noIn, refDestructuringErrors))
+      while (this.eat(tt.comma)) node.expressions.push(this$1.parseMaybeAssign(noIn, refDestructuringErrors))
       return this.finishNode(node, "SequenceExpression")
     }
     return expr
@@ -3077,7 +3107,7 @@
     } else {
       expr = this.parseExprSubscripts(refDestructuringErrors)
       if (this.checkExpressionErrors(refDestructuringErrors)) return expr
-      while (this$1.type.postfix && !this$1.canInsertSemicolon()) {
+      while (this.type.postfix && !this.canInsertSemicolon()) {
         var node$1 = this$1.startNodeAt(startPos, startLoc)
         node$1.operator = this$1.value
         node$1.prefix = false
@@ -3234,7 +3264,7 @@
       var innerStartPos = this.start, innerStartLoc = this.startLoc
       var exprList = [], first = true
       var refDestructuringErrors = new DestructuringErrors, spreadStart, innerParenStart
-      while (this$1.type !== tt.parenR) {
+      while (this.type !== tt.parenR) {
         first ? first = false : this$1.expect(tt.comma)
         if (this$1.type === tt.ellipsis) {
           spreadStart = this$1.start
@@ -3354,7 +3384,7 @@
     var node = this.startNode(), first = true, propHash = {}
     node.properties = []
     this.next()
-    while (!this$1.eat(tt.braceR)) {
+    while (!this.eat(tt.braceR)) {
       if (!first) {
         this$1.expect(tt.comma)
         if (this$1.afterTrailingComma(tt.braceR)) break
@@ -3529,7 +3559,7 @@
     var this$1 = this;
 
     var elts = [], first = true
-    while (!this$1.eat(close)) {
+    while (!this.eat(close)) {
       if (!first) {
         this$1.expect(tt.comma)
         if (allowTrailingComma && this$1.afterTrailingComma(close)) break
@@ -3672,7 +3702,7 @@
     b_tmpl: new TokContext("${", true),
     p_stat: new TokContext("(", false),
     p_expr: new TokContext("(", true),
-    q_tmpl: new TokContext("`", true, true, function ( p ) { return p.readTmplToken(); }),
+    q_tmpl: new TokContext("`", true, true, function (p) { return p.readTmplToken(); }),
     f_expr: new TokContext("function", true)
   }
 
@@ -3823,7 +3853,7 @@
     if (this.type !== tt.num && this.type !== tt.string) return
     this.pos = this.start
     if (this.options.locations) {
-      while (this$1.pos < this$1.lineStart) {
+      while (this.pos < this.lineStart) {
         this$1.lineStart = this$1.input.lastIndexOf("\n", this$1.lineStart - 2) + 1
         --this$1.curLine
       }
@@ -3876,7 +3906,7 @@
     if (this.options.locations) {
       lineBreakG.lastIndex = start
       var match
-      while ((match = lineBreakG.exec(this$1.input)) && match.index < this$1.pos) {
+      while ((match = lineBreakG.exec(this.input)) && match.index < this.pos) {
         ++this$1.curLine
         this$1.lineStart = match.index + match[0].length
       }
@@ -3892,7 +3922,7 @@
     var start = this.pos
     var startLoc = this.options.onComment && this.curPosition()
     var ch = this.input.charCodeAt(this.pos+=startSkip)
-    while (this$1.pos < this$1.input.length && ch !== 10 && ch !== 13 && ch !== 8232 && ch !== 8233) {
+    while (this.pos < this.input.length && ch !== 10 && ch !== 13 && ch !== 8232 && ch !== 8233) {
       ++this$1.pos
       ch = this$1.input.charCodeAt(this$1.pos)
     }
@@ -3907,7 +3937,7 @@
   pp$7.skipSpace = function() {
     var this$1 = this;
 
-    loop: while (this$1.pos < this$1.input.length) {
+    loop: while (this.pos < this.input.length) {
       var ch = this$1.input.charCodeAt(this$1.pos)
       switch (ch) {
         case 32: case 160: // ' '
@@ -4432,7 +4462,7 @@
     this.containsEsc = false
     var word = "", first = true, chunkStart = this.pos
     var astral = this.options.ecmaVersion >= 6
-    while (this$1.pos < this$1.input.length) {
+    while (this.pos < this.input.length) {
       var ch = this$1.fullCharCodeAtPos()
       if (isIdentifierChar(ch, astral)) {
         this$1.pos += ch <= 0xffff ? 1 : 2
@@ -4539,7 +4569,7 @@
   var builtins = 'Infinity NaN undefined null true false eval uneval isFinite isNaN parseFloat parseInt decodeURI decodeURIComponent encodeURI encodeURIComponent escape unescape Object Function Boolean Symbol Error EvalError InternalError RangeError ReferenceError SyntaxError TypeError URIError Number Math Date String RegExp Array Int8Array Uint8Array Uint8ClampedArray Int16Array Uint16Array Int32Array Uint32Array Float32Array Float64Array Map Set WeakMap WeakSet SIMD ArrayBuffer DataView JSON Promise Generator GeneratorFunction Reflect Proxy Intl'.split( ' ' );
 
   var blacklisted = blank();
-  reservedWords$1.concat( builtins ).forEach( function ( word ) { return blacklisted[ word ] = true; } );
+  reservedWords$1.concat( builtins ).forEach( function (word) { return blacklisted[ word ] = true; } );
 
 
   function makeLegalIdentifier ( str ) {
@@ -4622,8 +4652,8 @@
   var simdTypes = 'Int8x16 Int16x8 Int32x4 Float32x4 Float64x2'.split( ' ' );
   var simdMethods = 'abs add and bool check div equal extractLane fromFloat32x4 fromFloat32x4Bits fromFloat64x2 fromFloat64x2Bits fromInt16x8Bits fromInt32x4 fromInt32x4Bits fromInt8x16Bits greaterThan greaterThanOrEqual lessThan lessThanOrEqual load max maxNum min minNum mul neg not notEqual or reciprocalApproximation reciprocalSqrtApproximation replaceLane select selectBits shiftLeftByScalar shiftRightArithmeticByScalar shiftRightLogicalByScalar shuffle splat sqrt store sub swizzle xor'.split( ' ' );
   var allSimdMethods = [];
-  simdTypes.forEach( function ( t ) {
-  	simdMethods.forEach( function ( m ) {
+  simdTypes.forEach( function (t) {
+  	simdMethods.forEach( function (m) {
   		allSimdMethods.push( ("SIMD." + t + "." + m) );
   	});
   });
@@ -4650,11 +4680,11 @@
   	// TODO properties of e.g. window...
   ].concat(
   	arrayTypes,
-  	arrayTypes.map( function ( t ) { return (t + ".from"); } ),
-  	arrayTypes.map( function ( t ) { return (t + ".of"); } ),
-  	simdTypes.map( function ( t ) { return ("SIMD." + t); } ),
+  	arrayTypes.map( function (t) { return (t + ".from"); } ),
+  	arrayTypes.map( function (t) { return (t + ".of"); } ),
+  	simdTypes.map( function (t) { return ("SIMD." + t); } ),
   	allSimdMethods
-  ).forEach( function ( name ) { return pureFunctions[ name ] = true; } );
+  ).forEach( function (name) { return pureFunctions[ name ] = true; } );
 
   function getLocation ( source, charIndex ) {
   	var lines = source.split( '\n' );
@@ -4680,7 +4710,7 @@
   function error ( props ) {
   	var err = new Error( props.message );
 
-  	Object.keys( props ).forEach( function ( key ) {
+  	Object.keys( props ).forEach( function (key) {
   		err[ key ] = props[ key ];
   	});
 
@@ -4785,7 +4815,7 @@
   				} else {
   					declaration$1 = statement.module.trace( subject.name );
 
-  					if ( !declaration$1 || declaration$1.isExternal || declaration$1.isUsed ) {
+  					if ( !declaration$1 || declaration$1.isExternal || declaration$1.isUsed || ( declaration$1.original && declaration$1.original.isUsed ) ) {
   						hasSideEffect = true;
   					}
   				}
@@ -4802,7 +4832,7 @@
   var Reference = function Reference ( node, scope, statement ) {
   	var this$1 = this;
 
-  		this.node = node;
+  	this.node = node;
   	this.scope = scope;
   	this.statement = statement;
 
@@ -4828,7 +4858,7 @@
   	this.parts = [];
   };
 
-  var use = function ( alias ) { return alias.use(); };
+  var use = function (alias) { return alias.use(); };
 
   var Declaration = function Declaration ( node, isParam, statement ) {
   	if ( node ) {
@@ -4866,8 +4896,8 @@
   	if ( reference.isReassignment ) this.isReassigned = true;
   };
 
-  Declaration.prototype.render = function render ( es6 ) {
-  	if ( es6 ) return this.name;
+  Declaration.prototype.render = function render ( es ) {
+  	if ( es ) return this.name;
   	if ( !this.isReassigned || !this.exportName ) return this.name;
 
   	return ("exports." + (this.exportName));
@@ -4998,7 +5028,7 @@
   var SyntheticNamespaceDeclaration = function SyntheticNamespaceDeclaration ( module ) {
   	var this$1 = this;
 
-  		this.isNamespace = true;
+  	this.isNamespace = true;
   	this.module = module;
   	this.name = null;
 
@@ -5006,7 +5036,7 @@
   	this.aliases = [];
 
   	this.originals = blank();
-  	module.getExports().forEach( function ( name ) {
+  	module.getExports().forEach( function (name) {
   		this$1.originals[ name ] = module.traceExport( name );
   	});
   };
@@ -5055,9 +5085,9 @@
   };
 
   SyntheticNamespaceDeclaration.prototype.renderBlock = function renderBlock ( indentString ) {
-  	var this$1 = this;
+  		var this$1 = this;
 
-  		var members = keys( this.originals ).map( function ( name ) {
+  	var members = keys( this.originals ).map( function (name) {
   		var original = this$1.originals[ name ];
 
   		if ( original.isReassigned ) {
@@ -5100,18 +5130,18 @@
   	}
   };
 
-  ExternalDeclaration.prototype.render = function render ( es6 ) {
+  ExternalDeclaration.prototype.render = function render ( es ) {
   	if ( this.name === '*' ) {
   		return this.module.name;
   	}
 
   	if ( this.name === 'default' ) {
-  		return this.module.exportsNamespace || ( !es6 && this.module.exportsNames ) ?
+  		return this.module.exportsNamespace || ( !es && this.module.exportsNames ) ?
   			((this.module.name) + "__default") :
   			this.module.name;
   	}
 
-  	return es6 ? this.safeName : ((this.module.name) + "." + (this.name));
+  	return es ? this.safeName : ((this.module.name) + "." + (this.name));
   };
 
   ExternalDeclaration.prototype.run = function run$4 () {
@@ -5138,13 +5168,13 @@
   	},
 
   	ObjectPattern: function ObjectPattern ( names, param ) {
-  		param.properties.forEach( function ( prop ) {
+  		param.properties.forEach( function (prop) {
   			extractors[ prop.value.type ]( names, prop.value );
   		});
   	},
 
   	ArrayPattern: function ArrayPattern ( names, param ) {
-  		param.elements.forEach( function ( element ) {
+  		param.elements.forEach( function (element) {
   			if ( element ) extractors[ element.type ]( names, element );
   		});
   	},
@@ -5161,7 +5191,7 @@
   var Scope = function Scope ( options ) {
   	var this$1 = this;
 
-  		options = options || {};
+  	options = options || {};
 
   	this.parent = options.parent;
   	this.statement = options.statement || this.parent.statement;
@@ -5171,8 +5201,8 @@
   	this.declarations = blank();
 
   	if ( options.params ) {
-  		options.params.forEach( function ( param ) {
-  			extractNames( param ).forEach( function ( name ) {
+  		options.params.forEach( function (param) {
+  			extractNames( param ).forEach( function (name) {
   				this$1.declarations[ name ] = new Declaration( param, true, this$1.statement );
   			});
   		});
@@ -5180,14 +5210,14 @@
   };
 
   Scope.prototype.addDeclaration = function addDeclaration ( node, isBlockDeclaration, isVar ) {
-  	var this$1 = this;
+  		var this$1 = this;
 
-  		if ( !isBlockDeclaration && this.isBlockScope ) {
+  	if ( !isBlockDeclaration && this.isBlockScope ) {
   		// it's a `var` or function node, and this
   		// is a block scope, so we need to go up
   		this.parent.addDeclaration( node, isBlockDeclaration, isVar );
   	} else {
-  		extractNames( node.id ).forEach( function ( name ) {
+  		extractNames( node.id ).forEach( function (name) {
   			this$1.declarations[ name ] = new Declaration( node, false, this$1.statement );
   		});
   	}
@@ -5199,9 +5229,9 @@
   };
 
   Scope.prototype.eachDeclaration = function eachDeclaration ( fn ) {
-  	var this$1 = this;
+  		var this$1 = this;
 
-  		keys( this.declarations ).forEach( function ( key ) {
+  	keys( this.declarations ).forEach( function (key) {
   		fn( key, this$1.declarations[ key ] );
   	});
   };
@@ -5212,12 +5242,13 @@
   };
 
   var blockDeclarations = {
-  	'const': true,
-  	'let': true
+  	const: true,
+  	let: true
   };
 
   function attachScopes ( statement ) {
-  	var node = statement.node, scope = statement.scope;
+  	var node = statement.node;
+  	var scope = statement.scope;
 
   	walk( node, {
   		enter: function enter ( node, parent ) {
@@ -5231,7 +5262,7 @@
   			if ( node.type === 'VariableDeclaration' ) {
   				var isBlockDeclaration = blockDeclarations[ node.kind ];
 
-  				node.declarations.forEach( function ( declarator ) {
+  				node.declarations.forEach( function (declarator) {
   					scope.addDeclaration( declarator, isBlockDeclaration, true );
   				});
   			}
@@ -5325,7 +5356,11 @@
 
   	// find references
   	var statement = this;
-  	var ref = this, module = ref.module, references = ref.references, scope = ref.scope, stringLiteralRanges = ref.stringLiteralRanges;
+  	var ref = this;
+  		var module = ref.module;
+  		var references = ref.references;
+  		var scope = ref.scope;
+  		var stringLiteralRanges = ref.stringLiteralRanges;
   	var contextDepth = 0;
 
   	walk( this.node, {
@@ -5346,6 +5381,7 @@
 
   			if ( node.type === 'ThisExpression' && contextDepth === 0 ) {
   				module.magicString.overwrite( node.start, node.end, 'undefined' );
+  				module.bundle.onwarn( 'The `this` keyword is equivalent to `undefined` at the top level of an ES module, and has been rewritten' );
   			}
 
   			if ( node._scope ) scope = node._scope;
@@ -5388,14 +5424,14 @@
   				// with the parent scope
   				var referenceScope = parent.type === 'FunctionDeclaration' && node === parent.id ?
   					scope.parent :
-  					scope;
+  						scope;
 
-  				var isShorthandProperty = parent.type === 'Property' && parent.shorthand;
+  					var isShorthandProperty = parent.type === 'Property' && parent.shorthand;
 
-  				// Since `node.key` can equal `node.value` for shorthand properties
+  					// Since `node.key` can equal `node.value` for shorthand properties
   					// we must use the `prop` argument provided by `estree-walker` to determine
-  					// if we're looking at the key or the value.
-  					// If they are equal, we'll return to not create duplicate references.
+  				// if we're looking at the key or the value.
+  				// If they are equal, we'll return to not create duplicate references.
   				if ( isShorthandProperty && parent.value === parent.key && prop === 'value' ) {
   					return;
   				}
@@ -5419,7 +5455,7 @@
   	if ( this.isIncluded ) return; // prevent infinite loops
   	this.isIncluded = true;
 
-  	this.references.forEach( function ( reference ) {
+  	this.references.forEach( function (reference) {
   		if ( reference.declaration ) reference.declaration.use();
   	});
   };
@@ -5462,23 +5498,23 @@
   }
 
   var operators = {
-  	'==': function ( x ) {
+  	'==': function (x) {
   		return equals( x.left, x.right, false );
   	},
 
-  	'!=': function ( x ) { return not( operators['==']( x ) ); },
+  	'!=': function (x) { return not( operators['==']( x ) ); },
 
-  	'===': function ( x ) {
+  	'===': function (x) {
   		return equals( x.left, x.right, true );
   	},
 
-  	'!==': function ( x ) { return not( operators['===']( x ) ); },
+  	'!==': function (x) { return not( operators['===']( x ) ); },
 
-  	'!': function ( x ) { return isFalsy( x.argument ); },
+  	'!': function (x) { return isFalsy( x.argument ); },
 
-  	'&&': function ( x ) { return isTruthy( x.left ) && isTruthy( x.right ); },
+  	'&&': function (x) { return isTruthy( x.left ) && isTruthy( x.right ); },
 
-  	'||': function ( x ) { return isTruthy( x.left ) || isTruthy( x.right ); }
+  	'||': function (x) { return isTruthy( x.left ) || isTruthy( x.right ); }
   };
 
   function emptyBlockStatement ( start, end ) {
@@ -5491,16 +5527,22 @@
 
   var Module = function Module (ref) {
   	var this$1 = this;
-  		var id = ref.id;
-  		var code = ref.code;
+  	var id = ref.id;
+  	var code = ref.code;
+  	var originalCode = ref.originalCode;
+  	var originalSourceMap = ref.originalSourceMap;
+  	var ast = ref.ast;
+  	var sourceMapChain = ref.sourceMapChain;
+  	var bundle = ref.bundle;
 
-  		this.code = code;
-  	this.originalCode = ref.originalCode;
-  	this.originalSourceMap = ref.originalSourceMap;
-  	this.sourceMapChain = ref.sourceMapChain;
+  	this.code = code;
+  	this.originalCode = originalCode;
+  	this.originalSourceMap = originalSourceMap;
+  	this.sourceMapChain = sourceMapChain;
 
-  	this.bundle = ref.bundle;
+  	this.bundle = bundle;
   	this.id = id;
+  	this.excludeFromSourcemap = /\0/.test( id );
 
   	// all dependencies
   	this.sources = [];
@@ -5518,7 +5560,7 @@
   	// By default, `id` is the filename. Custom resolvers and loaders
   	// can change that, but it makes sense to use it for the source filename
   	this.magicString = new MagicString( code, {
-  		filename: id,
+  		filename: this.excludeFromSourcemap ? null : id, // don't include plugin helpers in sourcemap
   		indentExclusionRanges: []
   	});
 
@@ -5530,7 +5572,7 @@
   	}
 
   	this.comments = [];
-  	this.ast = ref.ast;
+  	this.ast = ast;
   	this.statements = this.parse();
 
   	this.declarations = blank();
@@ -5540,9 +5582,9 @@
   };
 
   Module.prototype.addExport = function addExport ( statement ) {
-  	var this$1 = this;
+  		var this$1 = this;
 
-  		var node = statement.node;
+  	var node = statement.node;
   	var source = node.source && node.source.value;
 
   	// export { name } from './other.js'
@@ -5556,7 +5598,7 @@
   		}
 
   		else {
-  			node.specifiers.forEach( function ( specifier ) {
+  			node.specifiers.forEach( function (specifier) {
   				var name = specifier.exported.name;
 
   				if ( this$1.exports[ name ] || this$1.reexports[ name ] ) {
@@ -5601,8 +5643,8 @@
   		var declaration = node.declaration;
 
   		if ( declaration.type === 'VariableDeclaration' ) {
-  			declaration.declarations.forEach( function ( decl ) {
-  				extractNames( decl.id ).forEach( function ( localName ) {
+  			declaration.declarations.forEach( function (decl) {
+  				extractNames( decl.id ).forEach( function (localName) {
   					this$1.exports[ localName ] = { localName: localName };
   				});
   			});
@@ -5616,7 +5658,7 @@
   	// export { foo, bar, baz }
   	else {
   		if ( node.specifiers.length ) {
-  			node.specifiers.forEach( function ( specifier ) {
+  			node.specifiers.forEach( function (specifier) {
   				var localName = specifier.local.name;
   				var exportedName = specifier.exported.name;
 
@@ -5633,14 +5675,14 @@
   };
 
   Module.prototype.addImport = function addImport ( statement ) {
-  	var this$1 = this;
+  		var this$1 = this;
 
-  		var node = statement.node;
+  	var node = statement.node;
   	var source = node.source.value;
 
   	if ( !~this.sources.indexOf( source ) ) this.sources.push( source );
 
-  	node.specifiers.forEach( function ( specifier ) {
+  	node.specifiers.forEach( function (specifier) {
   		var localName = specifier.local.name;
 
   		if ( this$1.imports[ localName ] ) {
@@ -5659,10 +5701,10 @@
   };
 
   Module.prototype.analyse = function analyse () {
-  	// discover this module's imports and exports
-  	var this$1 = this;
+  		var this$1 = this;
 
-  		this.statements.forEach( function ( statement ) {
+  	// discover this module's imports and exports
+  	this.statements.forEach( function (statement) {
   		if ( statement.isImportDeclaration ) this$1.addImport( statement );
   		else if ( statement.isExportDeclaration ) this$1.addExport( statement );
 
@@ -5682,20 +5724,20 @@
   };
 
   Module.prototype.bindAliases = function bindAliases () {
-  	var this$1 = this;
+  		var this$1 = this;
 
-  		keys( this.declarations ).forEach( function ( name ) {
+  	keys( this.declarations ).forEach( function (name) {
   		if ( name === '*' ) return;
 
   		var declaration = this$1.declarations[ name ];
-  			var statement = declaration.statement;
+  		var statement = declaration.statement;
 
   		if ( !statement || statement.node.type !== 'VariableDeclaration' ) return;
 
-  		var init = statement.node.declarations[0].init;
+  			var init = statement.node.declarations[0].init;
   		if ( !init || init.type === 'FunctionExpression' ) return;
 
-  		statement.references.forEach( function ( reference ) {
+  		statement.references.forEach( function (reference) {
   			if ( reference.name === name ) return;
 
   			var otherDeclaration = this$1.trace( reference.name );
@@ -5705,10 +5747,10 @@
   };
 
   Module.prototype.bindImportSpecifiers = function bindImportSpecifiers () {
-  	var this$1 = this;
+  		var this$1 = this;
 
-  		[ this.imports, this.reexports ].forEach( function ( specifiers ) {
-  		keys( specifiers ).forEach( function ( name ) {
+  	[ this.imports, this.reexports ].forEach( function (specifiers) {
+  		keys( specifiers ).forEach( function (name) {
   			var specifier = specifiers[ name ];
 
   			var id = this$1.resolvedIds[ specifier.source ];
@@ -5716,12 +5758,12 @@
   		});
   	});
 
-  	this.exportAllModules = this.exportAllSources.map( function ( source ) {
+  	this.exportAllModules = this.exportAllSources.map( function (source) {
   		var id = this$1.resolvedIds[ source ];
   		return this$1.bundle.moduleById.get( id );
   	});
 
-  	this.sources.forEach( function ( source ) {
+  	this.sources.forEach( function (source) {
   		var id = this$1.resolvedIds[ source ];
   		var module = this$1.bundle.moduleById.get( id );
 
@@ -5730,23 +5772,23 @@
   };
 
   Module.prototype.bindReferences = function bindReferences () {
-  	var this$1 = this;
+  		var this$1 = this;
 
-  		if ( this.declarations.default ) {
+  	if ( this.declarations.default ) {
   		if ( this.exports.default.identifier ) {
   			var declaration = this.trace( this.exports.default.identifier );
   			if ( declaration ) this.declarations.default.bind( declaration );
   		}
   	}
 
-  	this.statements.forEach( function ( statement ) {
+  	this.statements.forEach( function (statement) {
   		// skip `export { foo, bar, baz }`...
   		if ( statement.node.type === 'ExportNamedDeclaration' && statement.node.specifiers.length ) {
   			// ...unless this is the entry module
   			if ( this$1 !== this$1.bundle.entryModule ) return;
   		}
 
-  		statement.references.forEach( function ( reference ) {
+  		statement.references.forEach( function (reference) {
   			var declaration = reference.scope.findDeclaration( reference.name ) ||
   				                    this$1.trace( reference.name );
 
@@ -5763,16 +5805,16 @@
   Module.prototype.getExports = function getExports () {
   	var exports = blank();
 
-  	keys( this.exports ).forEach( function ( name ) {
+  	keys( this.exports ).forEach( function (name) {
   		exports[ name ] = true;
   	});
 
-  	keys( this.reexports ).forEach( function ( name ) {
+  	keys( this.reexports ).forEach( function (name) {
   		exports[ name ] = true;
   	});
 
-  	this.exportAllModules.forEach( function ( module ) {
-  		module.getExports().forEach( function ( name ) {
+  	this.exportAllModules.forEach( function (module) {
+  		module.getExports().forEach( function (name) {
   			if ( name !== 'default' ) exports[ name ] = true;
   		});
   	});
@@ -5789,10 +5831,10 @@
   };
 
   Module.prototype.parse = function parse$1 () {
-  	// The ast can be supplied programmatically (but usually won't be)
-  	var this$1 = this;
+  		var this$1 = this;
 
-  		if ( !this.ast ) {
+  	// The ast can be supplied programmatically (but usually won't be)
+  	if ( !this.ast ) {
   		// Try to extract a list of top-level statements/declarations. If
   		// the parse fails, attach file info and abort
   		try {
@@ -5811,25 +5853,25 @@
   	}
 
   	walk( this.ast, {
-  		enter: function ( node ) {
+  		enter: function (node) {
   			// eliminate dead branches early
   			if ( node.type === 'IfStatement' ) {
   				if ( isFalsy( node.test ) ) {
   					this$1.magicString.overwrite( node.consequent.start, node.consequent.end, '{}' );
-  						node.consequent = emptyBlockStatement( node.consequent.start, node.consequent.end );
+  					node.consequent = emptyBlockStatement( node.consequent.start, node.consequent.end );
   				} else if ( node.alternate && isTruthy( node.test ) ) {
-  					this$1.magicString.overwrite( node.alternate.start, node.alternate.end, '{}' );
+  						this$1.magicString.overwrite( node.alternate.start, node.alternate.end, '{}' );
   					node.alternate = emptyBlockStatement( node.alternate.start, node.alternate.end );
   				}
   			}
 
   			this$1.magicString.addSourcemapLocation( node.start );
-  				this$1.magicString.addSourcemapLocation( node.end );
+  			this$1.magicString.addSourcemapLocation( node.end );
   		},
 
   		leave: function ( node, parent, prop ) {
   			// eliminate dead branches early
-  			if ( node.type === 'ConditionalExpression' ) {
+  				if ( node.type === 'ConditionalExpression' ) {
   				if ( isFalsy( node.test ) ) {
   					this$1.magicString.remove( node.start, node.alternate.start );
   					parent[prop] = node.alternate;
@@ -5846,7 +5888,7 @@
   	var lastChar = 0;
   	var commentIndex = 0;
 
-  	this.ast.body.forEach( function ( node ) {
+  	this.ast.body.forEach( function (node) {
   		if ( node.type === 'EmptyStatement' ) return;
 
   		if (
@@ -5859,7 +5901,7 @@
   			// push a synthetic export declaration
   			var syntheticNode = {
   				type: 'ExportNamedDeclaration',
-  				specifiers: node.declaration.declarations.map( function ( declarator ) {
+  				specifiers: node.declaration.declarations.map( function (declarator) {
   					var id = { name: declarator.id.name };
   					return {
   						local: id,
@@ -5887,8 +5929,9 @@
   				this$1.magicString.remove( node.start, node.declarations[0].start );
   			}
 
-  			node.declarations.forEach( function ( declarator ) {
-  				var start = declarator.start, end = declarator.end;
+  			node.declarations.forEach( function (declarator) {
+  				var start = declarator.start;
+  					var end = declarator.end;
 
   				var syntheticNode = {
   					type: 'VariableDeclaration',
@@ -5935,25 +5978,25 @@
   	return statements;
   };
 
-  Module.prototype.render = function render ( es6 ) {
-  	var this$1 = this;
+  Module.prototype.render = function render ( es ) {
+  		var this$1 = this;
 
-  		var magicString = this.magicString.clone();
+  	var magicString = this.magicString.clone();
 
-  	this.statements.forEach( function ( statement ) {
+  	this.statements.forEach( function (statement) {
   		if ( !statement.isIncluded ) {
   			magicString.remove( statement.start, statement.next );
   			return;
   		}
 
-  		statement.stringLiteralRanges.forEach( function ( range ) { return magicString.indentExclusionRanges.push( range ); } );
+  		statement.stringLiteralRanges.forEach( function (range) { return magicString.indentExclusionRanges.push( range ); } );
 
   		// skip `export { foo, bar, baz }`
   		if ( statement.node.type === 'ExportNamedDeclaration' ) {
   			if ( statement.node.isSynthetic ) return;
 
   			// skip `export { foo, bar, baz }`
-  			if ( statement.node.specifiers.length ) {
+  			if ( statement.node.declaration === null ) {
   				magicString.remove( statement.start, statement.next );
   				return;
   			}
@@ -5977,11 +6020,11 @@
   				// `var foo = ...` as `exports.foo = ...`, in a case like `var { a, b } = c()`
   				// where `a` or `b` is exported and reassigned, we have to append
   				// `exports.a = a;` and `exports.b = b` instead
-  				extractNames( declarator.id ).forEach( function ( name ) {
+  				extractNames( declarator.id ).forEach( function (name) {
   					var declaration = this$1.declarations[ name ];
 
   					if ( declaration.exportName && declaration.isReassigned ) {
-  						magicString.insertLeft( statement.end, (";\nexports." + name + " = " + (declaration.render( es6 ))) );
+  						magicString.insertLeft( statement.end, (";\nexports." + name + " = " + (declaration.render( es ))) );
   					}
   				});
   			}
@@ -5996,8 +6039,9 @@
 
   		var toDeshadow = blank();
 
-  		statement.references.forEach( function ( reference ) {
-  			var start = reference.start, end = reference.end;
+  		statement.references.forEach( function (reference) {
+  			var start = reference.start;
+  				var end = reference.end;
 
   			if ( reference.isUndefined ) {
   				magicString.overwrite( start, end, 'undefined', true );
@@ -6006,7 +6050,7 @@
   			var declaration = reference.declaration;
 
   			if ( declaration ) {
-  				var name = declaration.render( es6 );
+  				var name = declaration.render( es );
 
   				// the second part of this check is necessary because of
   				// namespace optimisation – name of `foo.bar` could be `bar`
@@ -6029,7 +6073,7 @@
   		});
 
   		if ( keys( toDeshadow ).length ) {
-  			statement.references.forEach( function ( reference ) {
+  			statement.references.forEach( function (reference) {
   				if ( !reference.rewritten && reference.name in toDeshadow ) {
   					var replacement = toDeshadow[ reference.name ];
   					magicString.overwrite( reference.start, reference.end, reference.isShorthandProperty ? ((reference.name) + ": " + replacement) : replacement, true );
@@ -6046,11 +6090,21 @@
   				var name = extractNames( statement.node.declaration.declarations[ 0 ].id )[ 0 ];
   				var declaration$1 = this$1.declarations[ name ];
 
+  				// TODO is this even possible?
   				if ( !declaration$1 ) throw new Error( ("Missing declaration for " + name + "!") );
 
-  				var end = declaration$1.exportName && declaration$1.isReassigned ?
-  					statement.node.declaration.declarations[0].start :
-  					statement.node.declaration.start;
+  				var end;
+
+  				if ( es ) {
+  					end = statement.node.declaration.start;
+  				} else {
+  					if ( declaration$1.exportName && declaration$1.isReassigned ) {
+  						var declarator$1 = statement.node.declaration.declarations[0];
+  						end = declarator$1.init ? declarator$1.start : statement.next;
+  					} else {
+  						end = statement.node.declaration.start;
+  					}
+  				}
 
   				magicString.remove( statement.node.start, end );
   			}
@@ -6114,10 +6168,10 @@
   	 * @return {boolean} marked - if any new statements were marked for inclusion
   	 */
   Module.prototype.run = function run ( treeshake ) {
-  	var this$1 = this;
+  		var this$1 = this;
 
-  		if ( !treeshake ) {
-  		this.statements.forEach( function ( statement ) {
+  	if ( !treeshake ) {
+  		this.statements.forEach( function (statement) {
   			if ( statement.isImportDeclaration || ( statement.isExportDeclaration && statement.node.isSynthetic ) ) return;
 
   			statement.mark();
@@ -6127,7 +6181,7 @@
 
   	var marked = false;
 
-  	this.statements.forEach( function ( statement ) {
+  	this.statements.forEach( function (statement) {
   		marked = statement.run( this$1.strongDependencies ) || marked;
   	});
 
@@ -6164,10 +6218,10 @@
   };
 
   Module.prototype.traceExport = function traceExport ( name ) {
-  	// export { foo } from './other.js'
-  	var this$1 = this;
+  		var this$1 = this;
 
-  		var reexportDeclaration = this.reexports[ name ];
+  	// export { foo } from './other.js'
+  	var reexportDeclaration = this.reexports[ name ];
   	if ( reexportDeclaration ) {
   		var declaration = reexportDeclaration.module.traceExport( reexportDeclaration.localName );
 
@@ -6192,7 +6246,7 @@
   		return ( this.declarations[ name$1 ] = new SyntheticGlobalDeclaration( name$1 ) );
   	}
 
-  	for ( var i = 0; i < this$1.exportAllModules.length; i += 1 ) {
+  	for ( var i = 0; i < this.exportAllModules.length; i += 1 ) {
   		var module = this$1.exportAllModules[i];
   		var declaration$2 = module.traceExport( name );
 
@@ -6200,9 +6254,11 @@
   	}
   };
 
-  var ExternalModule = function ExternalModule ( id ) {
+  var ExternalModule = function ExternalModule ( id, relativePath ) {
   	this.id = id;
-  	this.name = makeLegalIdentifier( id );
+  	this.path = relativePath;
+
+  	this.name = makeLegalIdentifier( relativePath );
 
   	this.nameSuggestions = blank();
   	this.mostCommonSuggestion = 0;
@@ -6236,17 +6292,17 @@
   	return x.name;
   }
 
-  function quoteId ( x ) {
-  	return ("'" + (x.id) + "'");
+  function quotePath ( x ) {
+  	return ("'" + (x.path) + "'");
   }
 
   function req ( x ) {
-  	return ("require('" + (x.id) + "')");
+  	return ("require('" + (x.path) + "')");
   }
 
   function getInteropBlock ( bundle ) {
   	return bundle.externalModules
-  		.map( function ( module ) {
+  		.map( function (module) {
   			if ( !module.declarations.default ) return null;
 
   			if ( module.exportsNamespace ) {
@@ -6271,7 +6327,7 @@
   	}
 
   	return entryModule.getExports()
-  		.map( function ( name ) {
+  		.map( function (name) {
   			var prop = name === 'default' ? "['default']" : ("." + name);
   			var declaration = entryModule.traceExport( name );
 
@@ -6291,8 +6347,9 @@
 
   function amd ( bundle, magicString, ref, options ) {
   	var exportMode = ref.exportMode;
+  	var indentString = ref.indentString;
 
-  	var deps = bundle.externalModules.map( quoteId );
+  	var deps = bundle.externalModules.map( quotePath );
   	var args = bundle.externalModules.map( getName );
 
   	if ( exportMode === 'named' ) {
@@ -6319,7 +6376,7 @@
   	}
 
   	return magicString
-  		.indent( ref.indentString )
+  		.indent( indentString )
   		.append( '\n\n});' )
   		.prepend( intro );
   }
@@ -6336,23 +6393,23 @@
 
   	// TODO handle empty imports, once they're supported
   	var importBlock = bundle.externalModules
-  		.map( function ( module ) {
+  		.map( function (module) {
   			if ( module.declarations.default ) {
   				if ( module.exportsNamespace ) {
-  					return varOrConst + " " + (module.name) + " = require('" + (module.id) + "');" +
+  					return varOrConst + " " + (module.name) + " = require('" + (module.path) + "');" +
   						"\n" + varOrConst + " " + (module.name) + "__default = " + (module.name) + "['default'];";
   				}
 
   				needsInterop = true;
 
   				if ( module.exportsNames ) {
-  					return varOrConst + " " + (module.name) + " = require('" + (module.id) + "');" +
+  					return varOrConst + " " + (module.name) + " = require('" + (module.path) + "');" +
   						"\n" + varOrConst + " " + (module.name) + "__default = _interopDefault(" + (module.name) + ");";
   				}
 
-  				return (varOrConst + " " + (module.name) + " = _interopDefault(require('" + (module.id) + "'));");
+  				return (varOrConst + " " + (module.name) + " = _interopDefault(require('" + (module.path) + "'));");
   			} else {
-  				return (varOrConst + " " + (module.name) + " = require('" + (module.id) + "');");
+  				return (varOrConst + " " + (module.name) + " = require('" + (module.path) + "');");
   			}
   		})
   		.join( '\n' );
@@ -6377,14 +6434,14 @@
   	return name !== 'default';
   }
 
-  function es6 ( bundle, magicString ) {
+  function es ( bundle, magicString ) {
   	var importBlock = bundle.externalModules
-  		.map( function ( module ) {
+  		.map( function (module) {
   			var specifiers = [];
   			var specifiersList = [specifiers];
   			var importedNames = keys( module.declarations )
-  				.filter( function ( name ) { return name !== '*' && name !== 'default'; } )
-  				.map( function ( name ) {
+  				.filter( function (name) { return name !== '*' && name !== 'default'; } )
+  				.map( function (name) {
   					var declaration = module.declarations[ name ];
 
   					if ( declaration.name === declaration.safeName ) return declaration.name;
@@ -6413,9 +6470,9 @@
   			}
 
   			return specifiersList
-  				.map( function ( specifiers ) { return specifiers.length ?
-  						("import " + (specifiers.join( ', ' )) + " from '" + (module.id) + "';") :
-  						("import '" + (module.id) + "';"); }
+  				.map( function (specifiers) { return specifiers.length ?
+  						("import " + (specifiers.join( ', ' )) + " from '" + (module.path) + "';") :
+  						("import '" + (module.path) + "';"); }
   				)
   				.join( '\n' );
   		})
@@ -6427,7 +6484,7 @@
 
   	var module = bundle.entryModule;
 
-  	var specifiers = module.getExports().filter( notDefault ).map( function ( name ) {
+  	var specifiers = module.getExports().filter( notDefault ).map( function (name) {
   		var declaration = module.traceExport( name );
   		var rendered = declaration.render( true );
 
@@ -6451,7 +6508,7 @@
   }
 
   function getGlobalNameMaker ( globals, onwarn ) {
-  	var fn = typeof globals === 'function' ? globals : function ( id ) { return globals[ id ]; };
+  	var fn = typeof globals === 'function' ? globals : function (id) { return globals[ id ]; };
 
   	return function ( module ) {
   		var name = fn( module.id );
@@ -6470,12 +6527,13 @@
   	var acc = 'this';
 
   	return parts
-  		.map( function ( part ) { return ( acc += "." + part, (acc + " = " + acc + " || {};") ); } )
+  		.map( function (part) { return ( acc += "." + part, (acc + " = " + acc + " || {};") ); } )
   		.join( '\n' ) + '\n';
   }
 
   function iife ( bundle, magicString, ref, options ) {
   	var exportMode = ref.exportMode;
+  	var indentString = ref.indentString;
 
   	var globalNameMaker = getGlobalNameMaker( options.globals || blank(), bundle.onwarn );
 
@@ -6516,7 +6574,7 @@
   	if ( exportBlock ) magicString.append( '\n\n' + exportBlock );
 
   	return magicString
-  		.indent( ref.indentString )
+  		.indent( indentString )
   		.prepend( intro )
   		.append( outro );
   }
@@ -6527,13 +6585,14 @@
 
   	var acc = 'global';
   	return parts
-  		.map( function ( part ) { return ( acc += "." + part, (acc + " = " + acc + " || {}") ); } )
+  		.map( function (part) { return ( acc += "." + part, (acc + " = " + acc + " || {}") ); } )
   		.concat( ("global." + name) )
   		.join( ', ' );
   }
 
   function umd ( bundle, magicString, ref, options ) {
   	var exportMode = ref.exportMode;
+  	var indentString = ref.indentString;
 
   	if ( exportMode !== 'none' && !options.moduleName ) {
   		throw new Error( 'You must supply options.moduleName for UMD bundles' );
@@ -6541,9 +6600,9 @@
 
   	var globalNameMaker = getGlobalNameMaker( options.globals || blank(), bundle.onwarn );
 
-  	var amdDeps = bundle.externalModules.map( quoteId );
+  	var amdDeps = bundle.externalModules.map( quotePath );
   	var cjsDeps = bundle.externalModules.map( req );
-  	var globalDeps = bundle.externalModules.map( function ( module ) { return ("global." + (globalNameMaker( module ))); } );
+  	var globalDeps = bundle.externalModules.map( function (module) { return ("global." + (globalNameMaker( module ))); } );
 
   	var args = bundle.externalModules.map( getName );
 
@@ -6583,12 +6642,12 @@
 
   	return magicString
   		.trim()
-  		.indent( ref.indentString )
+  		.indent( indentString )
   		.append( '\n\n}));' )
   		.prepend( intro );
   }
 
-  var finalisers = { amd: amd, cjs: cjs, es6: es6, iife: iife, umd: umd };
+  var finalisers = { amd: amd, cjs: cjs, es: es, iife: iife, umd: umd };
 
   function ensureArray ( thing ) {
   	if ( Array.isArray( thing ) ) return thing;
@@ -6628,7 +6687,7 @@
   function makeOnwarn () {
   	var warned = blank();
 
-  	return function ( msg ) {
+  	return function (msg) {
   		if ( msg in warned ) return;
   		console.error( msg ); //eslint-disable-line no-console
   		warned[ msg ] = true;
@@ -6680,28 +6739,7 @@
   	return options.indent || '';
   }
 
-  function unixizePath ( path ) {
-  	return path.split( /[\/\\]/ ).join( '/' );
-  }
-
-  function mapSequence ( array, fn ) {
-  	var results = [];
-  	var promise = Promise.resolve();
-
-  	function next ( member, i ) {
-  		return fn( member ).then( function ( value ) { return results[i] = value; } );
-  	}
-
-  	var loop = function ( i ) {
-  		promise = promise.then( function () { return next( array[i], i ); } );
-  	};
-
-  	for ( var i = 0; i < array.length; i += 1 ) loop( i );
-
-  	return promise.then( function () { return results; } );
-  }
-
-  function transform ( source, id, transformers ) {
+  function transform ( source, id, plugins ) {
   	var sourceMapChain = [];
 
   	var originalSourceMap = typeof source.map === 'string' ? JSON.parse( source.map ) : source.map;
@@ -6709,9 +6747,11 @@
   	var originalCode = source.code;
   	var ast = source.ast;
 
-  	return transformers.reduce( function ( promise, transformer ) {
-  		return promise.then( function ( previous ) {
-  			return Promise.resolve( transformer( previous, id ) ).then( function ( result ) {
+  	return plugins.reduce( function ( promise, plugin ) {
+  		return promise.then( function (previous) {
+  			if ( !plugin.transform ) return previous;
+
+  			return Promise.resolve( plugin.transform( previous, id ) ).then( function (result) {
   				if ( result == null ) return previous;
 
   				if ( typeof result === 'string' ) {
@@ -6726,26 +6766,35 @@
   					result.map = JSON.parse( result.map );
   				}
 
-  				sourceMapChain.push( result.map );
+  				sourceMapChain.push( result.map || { missing: true, plugin: plugin.name }); // lil' bit hacky but it works
   				ast = result.ast;
 
   				return result.code;
   			});
+  		}).catch( function (err) {
+  			err.id = id;
+  			err.plugin = plugin.name;
+  			err.message = "Error transforming " + id + (plugin.name ? (" with '" + (plugin.name) + "' plugin") : '') + ": " + (err.message);
+  			throw err;
   		});
-
   	}, Promise.resolve( source.code ) )
 
-  	.then( function ( code ) { return ({ code: code, originalCode: originalCode, originalSourceMap: originalSourceMap, ast: ast, sourceMapChain: sourceMapChain }); } )
-  	.catch( function ( err ) {
-  		err.id = id;
-  		err.message = "Error loading " + id + ": " + (err.message);
-  		throw err;
-  	});
+  	.then( function (code) { return ({ code: code, originalCode: originalCode, originalSourceMap: originalSourceMap, ast: ast, sourceMapChain: sourceMapChain }); } );
   }
 
-  function transformBundle ( code, transformers, sourceMapChain ) {
-  	return transformers.reduce( function ( code, transformer ) {
-  		var result = transformer( code );
+  function transformBundle ( code, plugins, sourceMapChain ) {
+  	return plugins.reduce( function ( code, plugin ) {
+  		if ( !plugin.transformBundle ) return code;
+
+  		var result;
+
+  		try {
+  			result = plugin.transformBundle( code );
+  		} catch ( err ) {
+  			err.plugin = plugin.name;
+  			err.message = "Error transforming bundle" + (plugin.name ? (" with '" + (plugin.name) + "' plugin") : '') + ": " + (err.message);
+  			throw err;
+  		}
 
   		if ( result == null ) return code;
 
@@ -6975,27 +7024,28 @@
   };
 
   var Link = function Link ( map, sources ) {
-  	if ( !map ) throw new Error( 'Cannot generate a sourcemap if non-sourcemap-generating transformers are used' );
-
   	this.sources = sources;
   	this.names = map.names;
   	this.mappings = decode$1$1( map.mappings );
   };
 
   Link.prototype.traceMappings = function traceMappings () {
-  	var this$1 = this;
+  		var this$1 = this;
 
-  		var sources = [], sourcesContent = [], names = [];
+  	var sources = [];
+  	var sourcesContent = [];
+  	var names = [];
 
-  	var mappings = this.mappings.map( function ( line ) {
+  	var mappings = this.mappings.map( function (line) {
   		var tracedLine = [];
 
-  		line.forEach( function ( segment ) {
+  		line.forEach( function (segment) {
   			var source = this$1.sources[ segment[1] ];
   			var traced = source.traceSegment( segment[2], segment[3], this$1.names[ segment[4] ] );
 
   			if ( traced ) {
-  				var sourceIndex = null, nameIndex = null;
+  				var sourceIndex = null;
+  				var nameIndex = null;
   				segment = [
   					segment[0],
   					null,
@@ -7038,9 +7088,9 @@
   };
 
   Link.prototype.traceSegment = function traceSegment ( line, column, name ) {
-  	var this$1 = this;
+  		var this$1 = this;
 
-  		var segments = this.mappings[ line ];
+  	var segments = this.mappings[ line ];
 
   	if ( !segments ) return null;
 
@@ -7060,8 +7110,8 @@
   	return null;
   };
 
-  function collapseSourcemaps ( file, map, modules, bundleSourcemapChain ) {
-  	var moduleSources = modules.map( function ( module ) {
+  function collapseSourcemaps ( file, map, modules, bundleSourcemapChain, onwarn ) {
+  	var moduleSources = modules.filter( function (module) { return !module.excludeFromSourcemap; } ).map( function (module) {
   		var sourceMapChain = module.sourceMapChain;
 
   		var source;
@@ -7087,7 +7137,16 @@
   			}
   		}
 
-  		sourceMapChain.forEach( function ( map ) {
+  		sourceMapChain.forEach( function (map) {
+  			if ( map.missing ) {
+  				onwarn( ("Sourcemap is likely to be incorrect: a plugin" + (map.plugin ? (" ('" + (map.plugin) + "')") : "") + " was used to transform files, but didn't generate a sourcemap for the transformation. Consult https://github.com/rollup/rollup/wiki/Troubleshooting and the plugin documentation for more information") );
+
+  				map = {
+  					names: [],
+  					mappings: ''
+  				};
+  			}
+
   			source = new Link( map, [ source ]);
   		});
 
@@ -7096,15 +7155,19 @@
 
   	var source = new Link( map, moduleSources );
 
-  	bundleSourcemapChain.forEach( function ( map ) {
+  	bundleSourcemapChain.forEach( function (map) {
   		source = new Link( map, [ source ] );
   	});
 
-  	var ref = source.traceMappings(), sources = ref.sources, sourcesContent = ref.sourcesContent, names = ref.names, mappings = ref.mappings;
+  	var ref = source.traceMappings();
+  	var sources = ref.sources;
+  	var sourcesContent = ref.sourcesContent;
+  	var names = ref.names;
+  	var mappings = ref.mappings;
 
   	if ( file ) {
   		var directory = dirname( file );
-  		sources = sources.map( function ( source ) { return relative( directory, source ); } );
+  		sources = sources.map( function (source) { return relative( directory, source ); } );
   	}
 
   	// we re-use the `map` object because it has convenient toString/toURL methods
@@ -7123,46 +7186,44 @@
   var Bundle = function Bundle ( options ) {
   	var this$1 = this;
 
-  		this.cachedModules = new Map();
+  	this.cachedModules = new Map();
   	if ( options.cache ) {
-  		options.cache.modules.forEach( function ( module ) {
+  		options.cache.modules.forEach( function (module) {
   			this$1.cachedModules.set( module.id, module );
   		});
   	}
 
   	this.plugins = ensureArray( options.plugins );
 
-  	this.plugins.forEach( function ( plugin ) {
+  	this.plugins.forEach( function (plugin) {
   		if ( plugin.options ) {
   			options = plugin.options( options ) || options;
   		}
   	});
 
-  	this.entry = unixizePath( options.entry );
+  	this.entry = normalize( options.entry );
   	this.entryId = null;
   	this.entryModule = null;
 
   	this.treeshake = options.treeshake !== false;
 
   	this.resolveId = first(
-  		[ function ( id ) { return this$1.isExternal( id ) ? false : null; } ]
-  			.concat( this.plugins.map( function ( plugin ) { return plugin.resolveId; } ).filter( Boolean ) )
+  		[ function (id) { return this$1.isExternal( id ) ? false : null; } ]
+  			.concat( this.plugins.map( function (plugin) { return plugin.resolveId; } ).filter( Boolean ) )
   			.concat( resolveId )
   	);
 
   	var loaders = this.plugins
-  		.map( function ( plugin ) { return plugin.load; } )
+  		.map( function (plugin) { return plugin.load; } )
   		.filter( Boolean );
   	this.hasLoaders = loaders.length !== 0;
   	this.load = first( loaders.concat( load ) );
 
-  	this.transformers = this.plugins
-  		.map( function ( plugin ) { return plugin.transform; } )
-  		.filter( Boolean );
-
-  	this.bundleTransformers = this.plugins
-  		.map( function ( plugin ) { return plugin.transformBundle; } )
-  		.filter( Boolean );
+  	this.getPath = typeof options.paths === 'function' ?
+  		( function (id) { return options.paths( id ) || this$1.getPathRelativeToEntryDirname( id ); } ) :
+  		options.paths ?
+  			( function (id) { return options.paths.hasOwnProperty( id ) ? options.paths[ id ] : this$1.getPathRelativeToEntryDirname( id ); } ) :
+  			function (id) { return this$1.getPathRelativeToEntryDirname( id ); };
 
   	this.moduleById = new Map();
   	this.modules = [];
@@ -7175,44 +7236,44 @@
   	if ( typeof options.external === 'function' ) {
   		this.isExternal = options.external;
   	} else {
-  		var ids = ensureArray( options.external ).map( function ( id ) { return id.replace( /[\/\\]/g, '/' ); } );
-  		this.isExternal = function ( id ) { return ids.indexOf( id ) !== -1; };
+  		var ids = ensureArray( options.external );
+  		this.isExternal = function (id) { return ids.indexOf( id ) !== -1; };
   	}
 
   	this.onwarn = options.onwarn || makeOnwarn();
 
   	// TODO strictly speaking, this only applies with non-ES6, non-default-only bundles
-  	[ 'module', 'exports', '_interopDefault' ].forEach( function ( global ) { return this$1.assumedGlobals[ global ] = true; } );
+  	[ 'module', 'exports', '_interopDefault' ].forEach( function (global) { return this$1.assumedGlobals[ global ] = true; } );
 
   	this.varOrConst = options.preferConst ? 'const' : 'var';
   	this.acornOptions = options.acorn || {};
   };
 
   Bundle.prototype.build = function build () {
+  		var this$1 = this;
+
   	// Phase 1 – discovery. We load the entry module and find which
   	// modules it imports, and import those, until we have all
   	// of the entry module's dependencies
-  	var this$1 = this;
-
-  		return this.resolveId( this.entry, undefined )
-  		.then( function ( id ) {
+  	return this.resolveId( this.entry, undefined )
+  		.then( function (id) {
   			this$1.entryId = id;
   			return this$1.fetchModule( id, undefined );
   		})
-  		.then( function ( entryModule ) {
+  		.then( function (entryModule) {
   			this$1.entryModule = entryModule;
 
   			// Phase 2 – binding. We link references to their declarations
   			// to generate a complete picture of the bundle
-  			this$1.modules.forEach( function ( module ) { return module.bindImportSpecifiers(); } );
-  			this$1.modules.forEach( function ( module ) { return module.bindAliases(); } );
-  			this$1.modules.forEach( function ( module ) { return module.bindReferences(); } );
+  			this$1.modules.forEach( function (module) { return module.bindImportSpecifiers(); } );
+  			this$1.modules.forEach( function (module) { return module.bindAliases(); } );
+  			this$1.modules.forEach( function (module) { return module.bindReferences(); } );
 
   			// Phase 3 – marking. We 'run' each statement to see which ones
   			// need to be included in the generated bundle
 
   			// mark all export statements
-  			entryModule.getExports().forEach( function ( name ) {
+  			entryModule.getExports().forEach( function (name) {
   				var declaration = entryModule.traceExport( name );
   				declaration.exportName = name;
 
@@ -7224,7 +7285,7 @@
   			while ( !settled ) {
   				settled = true;
 
-  				this$1.modules.forEach( function ( module ) {
+  				this$1.modules.forEach( function (module) {
   					if ( module.run( this$1.treeshake ) ) settled = false;
   				});
   			}
@@ -7241,7 +7302,7 @@
   	var used = blank();
 
   	// ensure no conflicts with globals
-  	keys( this.assumedGlobals ).forEach( function ( name ) { return used[ name ] = 1; } );
+  	keys( this.assumedGlobals ).forEach( function (name) { return used[ name ] = 1; } );
 
   	function getSafeName ( name ) {
   		while ( used[ name ] ) {
@@ -7252,7 +7313,7 @@
   		return name;
   	}
 
-  	this.externalModules.forEach( function ( module ) {
+  	this.externalModules.forEach( function (module) {
   		module.name = getSafeName( module.name );
 
   		// ensure we don't shadow named external imports, if
@@ -7262,7 +7323,7 @@
   		});
   	});
 
-  	this.modules.forEach( function ( module ) {
+  	this.modules.forEach( function (module) {
   		forOwn( module.declarations, function ( declaration, originalName ) {
   			if ( declaration.isGlobal ) return;
 
@@ -7276,27 +7337,27 @@
   };
 
   Bundle.prototype.fetchModule = function fetchModule ( id, importer ) {
-  	// short-circuit cycles
-  	var this$1 = this;
+  		var this$1 = this;
 
-  		if ( this.moduleById.has( id ) ) return null;
+  	// short-circuit cycles
+  	if ( this.moduleById.has( id ) ) return null;
   	this.moduleById.set( id, null );
 
   	return this.load( id )
-  		.catch( function ( err ) {
+  		.catch( function (err) {
   			var msg = "Could not load " + id;
   			if ( importer ) msg += " (imported by " + importer + ")";
 
   			msg += ": " + (err.message);
   			throw new Error( msg );
   		})
-  		.then( function ( source ) {
+  		.then( function (source) {
   			if ( typeof source === 'string' ) return source;
   			if ( source && typeof source === 'object' && source.code ) return source;
 
   			throw new Error( ("Error loading " + id + ": load hook should return a string, a { code, map } object, or nothing/null") );
   		})
-  		.then( function ( source ) {
+  		.then( function (source) {
   			if ( typeof source === 'string' ) {
   				source = {
   					code: source,
@@ -7308,60 +7369,70 @@
   				return this$1.cachedModules.get( id );
   			}
 
-  			return transform( source, id, this$1.transformers );
+  			return transform( source, id, this$1.plugins );
   		})
-  		.then( function ( source ) {
-  			var code = source.code, originalCode = source.originalCode, originalSourceMap = source.originalSourceMap, ast = source.ast, sourceMapChain = source.sourceMapChain;
+  		.then( function (source) {
+  			var code = source.code;
+  				var originalCode = source.originalCode;
+  				var originalSourceMap = source.originalSourceMap;
+  				var ast = source.ast;
+  				var sourceMapChain = source.sourceMapChain;
 
   			var module = new Module({ id: id, code: code, originalCode: originalCode, originalSourceMap: originalSourceMap, ast: ast, sourceMapChain: sourceMapChain, bundle: this$1 });
 
   			this$1.modules.push( module );
   			this$1.moduleById.set( id, module );
 
-  			return this$1.fetchAllDependencies( module ).then( function () { return module; } );
+  			return this$1.fetchAllDependencies( module ).then( function () {
+  				module.exportsAll = blank();
+  				keys( module.exports ).forEach( function (name) {
+  					module.exportsAll[name] = module.id;
+  				});
+  				module.exportAllSources.forEach( function (source) {
+  					var id = module.resolvedIds[ source ];
+  					var exportAllModule = this$1.moduleById.get( id );
+  					if ( exportAllModule.isExternal ) return;
+
+  					keys( exportAllModule.exportsAll ).forEach( function (name) {
+  						if ( name in module.exportsAll ) {
+  							this$1.onwarn( ("Conflicting namespaces: " + (module.id) + " re-exports '" + name + "' from both " + (module.exportsAll[ name ]) + " (will be ignored) and " + (exportAllModule.exportsAll[ name ]) + ".") );
+  						}
+  						module.exportsAll[ name ] = exportAllModule.exportsAll[ name ];
+  					});
+  				});
+  				return module;
+  			});
   		});
   };
 
   Bundle.prototype.fetchAllDependencies = function fetchAllDependencies ( module ) {
-  	var this$1 = this;
+  		var this$1 = this;
 
-  		return mapSequence( module.sources, function ( source ) {
+  	return mapSequence( module.sources, function (source) {
   		return this$1.resolveId( source, module.id )
-  			.then( function ( resolvedId ) {
-  				var externalName;
-  				if ( resolvedId ) {
-  					// If the `resolvedId` is supposed to be external, make it so.
-  					externalName = resolvedId.replace( /[\/\\]/g, '/' );
-  				} else if ( isRelative( source ) ) {
-  					// This could be an external, relative dependency, based on the current module's parent dir.
-  					externalName = resolve( module.id, '..', source );
+  			.then( function (resolvedId) {
+  				var externalId = resolvedId || (
+  					isRelative( source ) ? resolve( module.id, '..', source ) : source
+  				);
+
+  				var isExternal = this$1.isExternal( externalId );
+
+  				if ( !resolvedId && !isExternal ) {
+  					if ( isRelative( source ) ) throw new Error( ("Could not resolve " + source + " from " + (module.id)) );
+
+  					this$1.onwarn( ("Treating '" + source + "' as external dependency") );
+  					isExternal = true;
   				}
-  				var forcedExternal = externalName && this$1.isExternal( externalName );
 
-  				if ( !resolvedId || forcedExternal ) {
-  					var normalizedExternal = source;
+  				if ( isExternal ) {
+  					module.resolvedIds[ source ] = externalId;
 
-  					if ( !forcedExternal ) {
-  						if ( isRelative( source ) ) throw new Error( ("Could not resolve " + source + " from " + (module.id)) );
-  						if ( !this$1.isExternal( source ) ) this$1.onwarn( ("Treating '" + source + "' as external dependency") );
-  					} else if ( resolvedId ) {
-  						if ( isRelative(resolvedId) || isAbsolute(resolvedId) ) {
-  							// Try to deduce relative path from entry dir if resolvedId is defined as a relative path.
-  							normalizedExternal = this$1.getPathRelativeToEntryDirname( resolvedId );
-  						} else {
-  							normalizedExternal = resolvedId;
-  						}
-  					}
-  					module.resolvedIds[ source ] = normalizedExternal;
-
-  					if ( !this$1.moduleById.has( normalizedExternal ) ) {
-  						var module$1 = new ExternalModule( normalizedExternal );
+  					if ( !this$1.moduleById.has( externalId ) ) {
+  						var module$1 = new ExternalModule( externalId, this$1.getPath( externalId ) );
   						this$1.externalModules.push( module$1 );
-  						this$1.moduleById.set( normalizedExternal, module$1 );
+  						this$1.moduleById.set( externalId, module$1 );
   					}
-  				}
-
-  				else {
+  				} else {
   					if ( resolvedId === module.id ) {
   						throw new Error( ("A module cannot import itself (" + resolvedId + ")") );
   					}
@@ -7374,22 +7445,25 @@
   };
 
   Bundle.prototype.getPathRelativeToEntryDirname = function getPathRelativeToEntryDirname ( resolvedId ) {
-  	// Get a path relative to the resolved entry directory
-  	var entryDirname = dirname( this.entryId );
-  	var relativeToEntry = relative( entryDirname, resolvedId );
+  	if ( isRelative( resolvedId ) || isAbsolute( resolvedId ) ) {
+  		var entryDirname = dirname( this.entryId );
+  		var relativeToEntry = normalize( relative( entryDirname, resolvedId ) );
 
-  	if ( isRelative( relativeToEntry )) {
-  		return relativeToEntry;
+  		return isRelative( relativeToEntry ) ? relativeToEntry : ("./" + relativeToEntry);
   	}
 
-  	// The path is missing the `./` prefix
-  	return ("./" + relativeToEntry);
+  	return resolvedId;
   };
 
   Bundle.prototype.render = function render ( options ) {
-  	if ( options === void 0 ) options = {};
+  		if ( options === void 0 ) options = {};
 
-  		var format = options.format || 'es6';
+  	if ( options.format === 'es6' ) {
+  		this.onwarn( 'The es6 format is deprecated – use `es` instead' );
+  		options.format = 'es';
+  	}
+
+  	var format = options.format || 'es';
 
   	// Determine export mode - 'default', 'named', 'none'
   	var exportMode = getExportMode( this, options.exports, options.moduleName );
@@ -7397,8 +7471,8 @@
   	var magicString = new Bundle$1({ separator: '\n\n' });
   	var usedModules = [];
 
-  	this.orderedModules.forEach( function ( module ) {
-  		var source = module.render( format === 'es6' );
+  	this.orderedModules.forEach( function (module) {
+  		var source = module.render( format === 'es' );
   		if ( source.toString().length ) {
   			magicString.addSource( source );
   			usedModules.push( module );
@@ -7407,7 +7481,7 @@
 
   	var intro = [ options.intro ]
   		.concat(
-  			this.plugins.map( function ( plugin ) { return plugin.intro && plugin.intro(); } )
+  			this.plugins.map( function (plugin) { return plugin.intro && plugin.intro(); } )
   		)
   		.filter( Boolean )
   		.join( '\n\n' );
@@ -7423,13 +7497,13 @@
   	magicString = finalise( this, magicString.trim(), { exportMode: exportMode, indentString: indentString }, options );
 
   	var banner = [ options.banner ]
-  		.concat( this.plugins.map( function ( plugin ) { return plugin.banner; } ) )
+  		.concat( this.plugins.map( function (plugin) { return plugin.banner; } ) )
   		.map( callIfFunction )
   		.filter( Boolean )
   		.join( '\n' );
 
   	var footer = [ options.footer ]
-  		.concat( this.plugins.map( function ( plugin ) { return plugin.footer; } ) )
+  		.concat( this.plugins.map( function (plugin) { return plugin.footer; } ) )
   		.map( callIfFunction )
   		.filter( Boolean )
   		.join( '\n' );
@@ -7441,42 +7515,42 @@
   	var map = null;
   	var bundleSourcemapChain = [];
 
-  	code = transformBundle( code, this.bundleTransformers, bundleSourcemapChain )
+  	code = transformBundle( code, this.plugins, bundleSourcemapChain )
   		.replace( new RegExp( ("\\/\\/#\\s+" + SOURCEMAPPING_URL$1 + "=.+\\n?"), 'g' ), '' );
 
   	if ( options.sourceMap ) {
   		var file = options.sourceMapFile || options.dest;
   		if ( file ) file = resolve( typeof process !== 'undefined' ? process.cwd() : '', file );
 
-  		if ( this.hasLoaders || this.transformers.length || this.bundleTransformers.length ) {
+  		if ( this.hasLoaders || find( this.plugins, function (plugin) { return plugin.transform || plugin.transformBundle; } ) ) {
   			map = magicString.generateMap( {} );
-  			map = collapseSourcemaps( file, map, usedModules, bundleSourcemapChain );
+  			map = collapseSourcemaps( file, map, usedModules, bundleSourcemapChain, this.onwarn );
   		} else {
   			map = magicString.generateMap({ file: file, includeContent: true });
   		}
 
-  		map.sources = map.sources.map( unixizePath );
+  		map.sources = map.sources.map( normalize );
   	}
 
   	return { code: code, map: map };
   };
 
   Bundle.prototype.sort = function sort () {
-  	var this$1 = this;
+  		var this$1 = this;
 
-  		var seen = {};
+  	var seen = {};
   	var hasCycles;
   	var ordered = [];
 
   	var stronglyDependsOn = blank();
   	var dependsOn = blank();
 
-  	this.modules.forEach( function ( module ) {
+  	this.modules.forEach( function (module) {
   		stronglyDependsOn[ module.id ] = blank();
   		dependsOn[ module.id ] = blank();
   	});
 
-  	this.modules.forEach( function ( module ) {
+  	this.modules.forEach( function (module) {
   		function processStrongDependency ( dependency ) {
   			if ( dependency === module || stronglyDependsOn[ module.id ][ dependency.id ] ) return;
 
@@ -7491,14 +7565,14 @@
   			dependency.dependencies.forEach( processDependency );
   		}
 
-  		module.strongDependencies.forEach( processStrongDependency );
+  			module.strongDependencies.forEach( processStrongDependency );
   		module.dependencies.forEach( processDependency );
   	});
 
-  		var visit = function ( module ) {
+  	var visit = function (module) {
   		if ( seen[ module.id ] ) {
   			hasCycles = true;
-  				return;
+  			return;
   		}
 
   		seen[ module.id ] = true;
@@ -7516,11 +7590,11 @@
 
   				if ( stronglyDependsOn[ a.id ][ b.id ] ) {
   					// somewhere, there is a module that imports b before a. Because
-  					// b imports a, a is placed before b. We need to find the module
+  						// b imports a, a is placed before b. We need to find the module
   					// in question, so we can provide a useful error message
-  						var parent = '[[unknown]]';
+  					var parent = '[[unknown]]';
 
-  					var findParent = function ( module ) {
+  					var findParent = function (module) {
   						if ( dependsOn[ module.id ][ a.id ] && dependsOn[ module.id ][ b.id ] ) {
   							parent = module.id;
   						} else {
@@ -7546,7 +7620,7 @@
   	return ordered;
   };
 
-  var VERSION = '0.31.2';
+  var VERSION = '0.34.1';
 
   var ALLOWED_KEYS = [
   	'acorn',
@@ -7566,6 +7640,7 @@
   	'noConflict',
   	'onwarn',
   	'outro',
+  	'paths',
   	'plugins',
   	'preferConst',
   	'sourceMap',
@@ -7593,19 +7668,35 @@
   	var bundle = new Bundle( options );
 
   	return bundle.build().then( function () {
-  		return {
-  			imports: bundle.externalModules.map( function ( module ) { return module.id; } ),
-  			exports: keys( bundle.entryModule.exports ),
-  			modules: bundle.orderedModules.map( function ( module ) { return module.toJSON(); } ),
+  		function generate ( options ) {
+  			var rendered = bundle.render( options );
 
-  			generate: function ( options ) { return bundle.render( options ); },
-  			write: function ( options ) {
+  			bundle.plugins.forEach( function (plugin) {
+  				if ( plugin.ongenerate ) {
+  					plugin.ongenerate( assign({
+  						bundle: result
+  					}, options ), rendered);
+  				}
+  			});
+
+  			return rendered;
+  		}
+
+  		var result = {
+  			imports: bundle.externalModules.map( function (module) { return module.id; } ),
+  			exports: keys( bundle.entryModule.exports ),
+  			modules: bundle.orderedModules.map( function (module) { return module.toJSON(); } ),
+
+  			generate: generate,
+  			write: function (options) {
   				if ( !options || !options.dest ) {
   					throw new Error( 'You must supply options.dest to bundle.write' );
   				}
 
   				var dest = options.dest;
-  				var ref = bundle.render( options ), code = ref.code, map = ref.map;
+  				var output = generate( options );
+  				var code = output.code;
+  				var map = output.map;
 
   				var promises = [];
 
@@ -7619,13 +7710,21 @@
   						promises.push( writeFile( dest + '.map', map.toString() ) );
   					}
 
-  					code += "\n//# " + SOURCEMAPPING_URL$1 + "=" + url;
+  					code += "\n//# " + SOURCEMAPPING_URL$1 + "=" + url + "\n";
   				}
 
   				promises.push( writeFile( dest, code ) );
-  				return Promise.all( promises );
+  				return Promise.all( promises ).then( function () {
+  					return mapSequence( bundle.plugins.filter( function (plugin) { return plugin.onwrite; } ), function (plugin) {
+  						return Promise.resolve( plugin.onwrite( assign({
+  							bundle: result
+  						}, options ), output));
+  					});
+  				});
   			}
   		};
+
+  		return result;
   	});
   }
 
