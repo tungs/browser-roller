@@ -58,7 +58,9 @@
 		root[moduleName] = factory(fileDownloader, root["esprima"]);
 	}
 }(this, function(fileDownloader, esprima){
-	var npmloader = {};
+	var npmloader = {
+    _cache: false
+  };
   var npmCDNBaseUrl = "https://npmcdn.com/";
   npmloader.baseUrl = npmCDNBaseUrl;
 
@@ -75,9 +77,10 @@
     console.log("Retrieving: "+fileUrl);
     var request;
     var cancel = false;
-    var requestFile = function(){
-      if(fileUrl in cache){
-        callback(null, cache[fileUrl]);
+    var ret;
+    var requestFile = function(cb){
+      if(npmloader._cache && fileUrl in cache){
+        cb(null, cache[fileUrl]);
         return;
       }
       request = fileDownloader(fileUrl, function(error, text){
@@ -85,39 +88,59 @@
         {
           console.warn("Error Requesting File " + fileUrl, error);
           if(!cancel) {
-            callback(error, null);
+            cb(error, null);
 /*
             console.log("Retrying in 60 seconds");
             setTimeout(requestFile, 60000);
 */
           }
         } else {
-          cache[fileUrl] = text;
+          if(npmloader._cache){
+            cache[fileUrl] = text;
+          }
           if(!cancel){
-            callback(error, text);
+            cb(error, text);
           }
         }
       });
     }
-    requestFile();
-    return {
-      cancel: function(){
+    if(callback){
+      ret = {};
+      requestFile(callback);
+    } else {
+      ret = new Promise(function(resolve, reject){
+        requestFile(function(err, data){
+          if(err){
+            reject(err);
+          } else {
+            resolve(data);
+          }
+        });
+      });
+    }
+    ret.cancel = function(){
         cancel = true;
         if(request){
           request.abort();
         }
-      },
-      getXHR: function(){
+      };
+    ret.getXHR = function(){
         return request;
       }
-    }  
+    return ret;
   };
   npmloader.retrieveFile = retrieveFile;
 
   var retrieveJSON = function(fileUrl, callback){
-    return retrieveFile(fileUrl, function(error, text){
-      callback(error, text ? JSON.parse(text) : null);
-    });
+    if(callback){
+      return retrieveFile(fileUrl, function(error, text){
+        callback(error, text ? JSON.parse(text) : null);
+      });      
+    } else {
+      return retrieveFile(fileUrl).then(function(text){
+        return text ? JSON.parse(text) : null;
+      });
+    }
   };
   npmloader.retrieveJSON = retrieveJSON;
 
@@ -141,52 +164,6 @@
     return retrieveJSON(generateModuleUrl(moduleName, version) + '/?json', callback);
   };
   npmloader.retrieveModuleDirectory = retrieveModuleDirectory;
-
-  var retrieveModuleJS = function(moduleName, version, callback){
-    var filepaths = [];
-    var filesToLoad = 0;
-    var moduleCode = {};
-    var walkDirectory = function(directory){
-      var i, path;
-      for(i=0; i<directory.files.length; i++){
-        path = directory.files[i].path;
-        if(directory.files[i].type==="directory"){ 
-          //if(!path.endsWith('/build')
-          walkDirectory(directory.files[i]);
-        } else if(path.endsWith('.js')){ // alternatively check if files[i].contentType==="application/javascript"
-          filepaths.push(path);
-        }
-      }
-    };
-    var loadCode = function(filepath, name, cb){
-      retrieveFile(filepath, function(err, code){
-        moduleCode[name] = code;
-        cb(err, code);
-      });
-    };
-    retrieveModuleDirectory(moduleName, version, function(error, directory){
-      var i;
-      var hasError = false;
-      walkDirectory(directory);
-      filesToLoad = filepaths.length;
-      for(i=0; i<filepaths.length; i++) {
-        loadCode(generateModuleUrl(moduleName, version) + filepaths[i], filepaths[i], function(err, code){
-          if(hasError){
-            return;
-          }
-          if(err){
-            hasError = true;
-            callback(err, null);
-          }
-          filesToLoad--;
-          if(!filesToLoad){
-            callback(err, {name: moduleName, version: version, files: moduleCode});
-          }
-        });      
-      }
-    });
-  };
-  npmloader.retrieveModuleJS = retrieveModuleJS;
 
   var iterateList = function(list, iteration, itemCallback, callback){
     var toLoad = list.length, i, hasError = false;
@@ -248,13 +225,6 @@
     });
   };
 
-  var retrieveModulesJS = function(moduleList, callback){
-    return iterateModuleList(moduleList, function(listItem, cb){
-      retrieveModuleJS(listItem.name, listItem.version, cb);
-    }, callback);
-  };
-  npmloader.retrieveModulesJS = retrieveModulesJS;
-
   var parseExportSymbols = function(src) {
     var symbols = [];
     var prog = esprima.parse(src, { sourceType: 'module'});
@@ -279,13 +249,17 @@
   };
 
   var retrieveModuleExports = function(moduleName, version, callback){
-    retrieveModuleFile(moduleName, version, 'index.js', function(err, text){
-      if(err){
-        callback(err, null);
-      } else {
-        callback(err, parseExportSymbols(text));
-      }
-    });
+    if(callback){
+      return retrieveModuleFile(moduleName, version, 'index.js', function(err, text){
+        if(err){
+          callback(err, null);
+        } else {
+          callback(err, parseExportSymbols(text));
+        }
+      });      
+    } else {
+      return retrieveModuleFile(moduleName, version, 'index.js').then(parseExportSymbols);
+    }
   };
   npmloader.retrieveModuleExports = retrieveModuleExports;
 
@@ -329,6 +303,23 @@
   };
   npmloader.retrieveModuleInfo = retrieveModuleInfo;
 
+  var retrieveModuleInfoPromise = function(moduleName, version){
+    return Promise.all([retrieveModulePackage(moduleName,version), retrieveModuleExports(moduleName,version)]).then(function(data){
+      var info = {}, key, pack = data[0], symbols = data[1];
+      for(key in pack){
+        if(pack.hasOwnProperty(key)){
+          info[key] = pack[key];
+        }        
+      }
+      info.exportSymbols = symbols.map(function(item){
+        return item.name;
+      });
+      return info;
+    });
+  };
+  npmloader.retrieveModuleInfoPromise = retrieveModuleInfoPromise;
+
+
   var retrieveModulesInfo = function(moduleList, callback){
     return iterateModuleList(moduleList, function(listItem, cb){
       retrieveModuleInfo(listItem.name, listItem.version, cb);
@@ -336,64 +327,12 @@
   };
   npmloader.retrieveModulesInfo = retrieveModulesInfo;
 
-  var compareVersions = function(a, b){
-    // TODO: rethink how to compare nonspecific versions of modules (e.g. "~1.0.0"; ">=0.8.2"; etc)
-    var i = 0;
-    a = a.split('.');
-    b = b.split('.');
-    for(i=0; i < Math.max(a.length, b.length); i++){
-      if(i >= a.length && +b[i]>0){
-        return -1;
-      } else if(i >= b.length && +a[i]>0){
-        return 1;
-      }
-      if(i < a.length && i < b.length && +a[i] !== +b[i]){
-        return +a[i]-b[i];
-      }
-    }
-    return 0;
+  var retrieveModulesInfoPromise = function(moduleList){
+    return Promise.all(moduleList.map(function(module){
+      return retrieveModuleInfoPromise(module.name, module.version);
+    }));
   };
-  npmloader.compareVersions = compareVersions;
-
-  var modulesToLoad = 0;
-  var loadModuleDependencies = function(dependencies, callback){
-    var moduleName;
-    for(moduleName in dependencies){
-      if(dependencies.hasOwnProperty(moduleName)){
-        loadModuleAndDependencies(moduleName, dependencies[moduleName], callback);
-      }
-    }
-  };
-  npmloader.loadModuleDependencies = loadModuleDependencies;
-
-  var loadModuleAndDependencies = function(moduleName, version, callback){
-    var m;
-    if(moduleName in modules){ // a previous module was already loaded or is loading
-      if(compareVersions(modules[moduleName].version, version) >= 0) {
-        // previous load is fine
-          callback();
-        return;
-      } else {
-        // cancel the previous request, and count it as loaded
-        console.log('Canceling Request', modules[moduleName].version, version);
-        modules[moduleName].request.cancel();
-        modulesToLoad--;
-      }
-    } 
-    m = {
-      name: moduleName,
-      version: version,
-      loaded: false
-    }
-    moduleList.push(m);
-    modules[moduleName] = m;
-    modulesToLoad++;
-    m.request = retrieveJSON(generateModuleUrl(m.name, m.version) + '/package.json', function(error, package){
-      console.log(package);
-      loadModuleDependencies(package.dependencies, callback);
-    });
-  };
-  npmloader.loadModuleAndDependencies = loadModuleAndDependencies;
+  npmloader.retrieveModulesInfoPromise = retrieveModulesInfoPromise;
 
 	return npmloader;
 }));
