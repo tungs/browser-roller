@@ -61,7 +61,7 @@
 	var npmloader = {
     _cache: false
   };
-  var npmCDNBaseUrl = "https://npmcdn.com/";
+  var npmCDNBaseUrl = "https://unpkg.com/";
   npmloader.baseUrl = npmCDNBaseUrl;
 
   var moduleList = [];
