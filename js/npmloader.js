@@ -61,20 +61,15 @@
 	var npmloader = {
     _cache: false
   };
-  var unpkgBaseUrl = "https://unpkg.com/";
-  npmloader.baseUrl = unpkgBaseUrl;
+  var npmCDNBaseUrl = "https://npmcdn.com/";
+  npmloader.baseUrl = npmCDNBaseUrl;
 
   var moduleList = [];
   var modules = {};
   var cache = {};
 
-  var addCallback = function(p, callback){
-    return callback ? p.then(function(data){ callback(null, data); }, function(err){ callback(err, null); }) : p;
-  };
-  npmloader.addCallback = addCallback;
-
   var generateModuleUrl = function(moduleName, version){
-    return unpkgBaseUrl + moduleName + (version ? '@' + version : '');
+    return npmCDNBaseUrl + moduleName + (version ? '@' + version : '');
   };
   npmloader.generateModuleUrl = generateModuleUrl;
 
@@ -83,39 +78,46 @@
     var request;
     var cancel = false;
     var ret;
-
-    var ret = addCallback(new Promise(function(resolve, reject){
-      var requestFile = function(){
-        if(npmloader._cache && fileUrl in cache){
-          resolve(cache[fileUrl]);
-          return;
+    var requestFile = function(cb){
+      if(npmloader._cache && fileUrl in cache){
+        cb(null, cache[fileUrl]);
+        return;
+      }
+      request = fileDownloader(fileUrl, function(error, text){
+        if(error) // should have finer error handling
+        {
+          console.warn("Error Requesting File " + fileUrl, error);
+          if(!cancel) {
+            cb(error, null);
+/*
+            console.log("Retrying in 60 seconds");
+            setTimeout(requestFile, 60000);
+*/
+          }
+        } else {
+          if(npmloader._cache){
+            cache[fileUrl] = text;
+          }
+          if(!cancel){
+            cb(error, text);
+          }
         }
-        request = fileDownloader(fileUrl, function(error, text){
-          if(error) // should have finer error handling
-          {
-            console.warn("Error Requesting File " + fileUrl, error);
-            if(!cancel) {
-              reject(error);
-  /*
-              console.log("Retrying in 60 seconds");
-              setTimeout(requestFile, 60000);
-  */
-            }
+      });
+    }
+    if(callback){
+      ret = {};
+      requestFile(callback);
+    } else {
+      ret = new Promise(function(resolve, reject){
+        requestFile(function(err, data){
+          if(err){
+            reject(err);
           } else {
-            if(npmloader._cache){
-              cache[fileUrl] = text;
-            }
-            if(!cancel){
-              resolve(text);
-            } else {
-              reject(new Error("Request to "+fileUrl+" canceled"));
-            }
+            resolve(data);
           }
         });
-      }
-      requestFile();
-    }), callback);
-
+      });
+    }
     ret.cancel = function(){
         cancel = true;
         if(request){
@@ -129,29 +131,19 @@
   };
   npmloader.retrieveFile = retrieveFile;
 
-  var NotFoundError = function(message) {
-    this.message = message;
-    this.stack = (new Error()).stack;
-  }
-
-  NotFoundError.prototype = Object.create(Error.prototype);
-  NotFoundError.prototype.name = 'FileNotFoundError';
-  NotFoundError.prototype.constructor = NotFoundError;
-  npmloader.NotFoundError = NotFoundError;
-
   var retrieveJSON = function(fileUrl, callback){
-    return addCallback(retrieveFile(fileUrl)
-      .then(function(text){
-        var ret = null;
-        try {
-          ret = JSON.parse(text);
-        } catch(e) {
-          throw new NotFoundError(fileUrl + " was not found!");
-        }
-        return ret;
-      }), callback);
+    if(callback){
+      return retrieveFile(fileUrl, function(error, text){
+        callback(error, text ? JSON.parse(text) : null);
+      });      
+    } else {
+      return retrieveFile(fileUrl).then(function(text){
+        return text ? JSON.parse(text) : null;
+      });
+    }
   };
   npmloader.retrieveJSON = retrieveJSON;
+
 
   var retrieveModuleFile = function(moduleName, version, filepath, callback){
     return retrieveFile(generateModuleUrl(moduleName, version) + '/'+ filepath, callback);
@@ -173,6 +165,29 @@
   };
   npmloader.retrieveModuleDirectory = retrieveModuleDirectory;
 
+  var iterateList = function(list, iteration, itemCallback, callback){
+    var toLoad = list.length, i, hasError = false;
+    var loaded = function(ind, queryItem){
+      return function(err){
+        if(hasError){
+          return;
+        }
+        if(err){
+          hasError = true;
+          callback(err);
+        }
+        itemCallback.apply(this, [ind, queryItem].concat(Array.prototype.slice.call(arguments, 1)));
+        toLoad--;
+        if(!toLoad){
+          callback(err);
+        }
+      };
+    }
+    for(i=0;i<list.length;i++){
+      iteration(list[i], loaded(i, list[i]));
+    };
+  };
+
   var isArray = (Array && Array.isArray) ? Array.isArray : function(obj){
     return Object.prototype.toString(obj) === "[object Array]"; // this does not work in Node!
   };
@@ -181,7 +196,11 @@
     var moduleList = [], key;
     if(isArray(obj)){
       moduleList = obj.map(function(item){
-        return typeof item === 'string' ? {name: item, version: null} : item;
+        if(typeof item === 'string'){
+          return {name: item, version: null}
+        } else {
+          return item;
+        }
       });
     } else if(typeof obj === typeof {}){
       for(key in obj){
@@ -193,6 +212,18 @@
     return moduleList;
   };
   npmloader.resolveToModuleList = resolveToModuleList;
+
+  var iterateModuleList = function(moduleObj, moduleProcessor, callback){
+    var moduleList = resolveToModuleList(moduleObj);
+    var modules = [];
+    return iterateList(moduleList, function(listItem, cb){
+      moduleProcessor(listItem, cb);
+    }, function(ind, queryItem, retrievedItem){
+      modules[ind] = retrievedItem;
+    }, function(err){
+      callback(err, modules);
+    });
+  };
 
   var parseExportSymbols = function(src) {
     var symbols = [];
@@ -208,7 +239,7 @@
                 name: specifiers[j].exported.name,
                 local: specifiers[j].local.name,
                 from: prog.body[i].source.value
-              });
+              })
             }
           }
         }
@@ -218,12 +249,62 @@
   };
 
   var retrieveModuleExports = function(moduleName, version, callback){
-    return addCallback(retrieveModuleFile(moduleName, version, 'index.js').then(parseExportSymbols), callback);
+    if(callback){
+      return retrieveModuleFile(moduleName, version, 'index.js', function(err, text){
+        if(err){
+          callback(err, null);
+        } else {
+          callback(err, parseExportSymbols(text));
+        }
+      });      
+    } else {
+      return retrieveModuleFile(moduleName, version, 'index.js').then(parseExportSymbols);
+    }
   };
   npmloader.retrieveModuleExports = retrieveModuleExports;
 
   var retrieveModuleInfo = function(moduleName, version, callback){
-    return addCallback(Promise.all([retrieveModulePackage(moduleName,version), retrieveModuleExports(moduleName,version)]).then(function(data){
+    var info = {};
+    var hasError = false;
+    var toLoad = 2;
+    var cbgen = function(processor) {
+      return function(err, data){
+        if(hasError){
+          // calback already called
+          return;
+        }
+        if(err){
+          hasError = true;
+          callback(err, null);
+          return;
+        }
+        processor(data);
+        toLoad--;
+        if(!toLoad){
+          callback(err, info);
+        }        
+      }
+    };
+
+    retrieveModulePackage(moduleName, version, cbgen(function(pack){
+      var key;
+      for(key in pack){
+        if(pack.hasOwnProperty(key)){
+          info[key] = pack[key];
+        }
+      }
+    }));
+
+    retrieveModuleExports(moduleName, version, cbgen(function(symbols){
+      info.exportSymbols = symbols.map(function(item){
+        return item.name;
+      });
+    }));
+  };
+  npmloader.retrieveModuleInfo = retrieveModuleInfo;
+
+  var retrieveModuleInfoPromise = function(moduleName, version){
+    return Promise.all([retrieveModulePackage(moduleName,version), retrieveModuleExports(moduleName,version)]).then(function(data){
       var info = {}, key, pack = data[0], symbols = data[1];
       for(key in pack){
         if(pack.hasOwnProperty(key)){
@@ -234,17 +315,24 @@
         return item.name;
       });
       return info;
-    }), callback);
+    });
   };
-  npmloader.retrieveModuleInfo = retrieveModuleInfo;
+  npmloader.retrieveModuleInfoPromise = retrieveModuleInfoPromise;
 
 
   var retrieveModulesInfo = function(moduleList, callback){
-    return addCallback(Promise.all(moduleList.map(function(module){
-      return retrieveModuleInfo(module.name, module.version);
-    })), callback);
+    return iterateModuleList(moduleList, function(listItem, cb){
+      retrieveModuleInfo(listItem.name, listItem.version, cb);
+    }, callback);
   };
   npmloader.retrieveModulesInfo = retrieveModulesInfo;
+
+  var retrieveModulesInfoPromise = function(moduleList){
+    return Promise.all(moduleList.map(function(module){
+      return retrieveModuleInfoPromise(module.name, module.version);
+    }));
+  };
+  npmloader.retrieveModulesInfoPromise = retrieveModulesInfoPromise;
 
 	return npmloader;
 }));

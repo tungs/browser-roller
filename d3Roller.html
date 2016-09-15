@@ -86,19 +86,9 @@
         return par;
       };
 
-      var messenger = function(message) {
-        if(message.type === "status") {
-          d3.select("#statusMessage").html(message.message);
-        }
-      };
 
-      messenger({type:"status", message:"Retrieving d3 package info..."});
-
-      d3InfoLoader.loadModulesInfo({"d3-scale-chromatic": "latest"}, function(err, info){
+      d3InfoLoader.loadModulesInfo({"d3-scale-chromatic": "latest"}, function(error, info){
 //      d3.json("data/d3Info.json", function(err, info){
-        if(err) {
-          console.log(err);
-        }
       	var moduleDivs;
         var moduleHeaders;
         var moduleCheckboxSpans;
@@ -224,12 +214,11 @@
           d3.select(findParent(this, "div", 2)).select(".submoduleDiv").style("display", d3.select(this).text()===collapseText ? "block" : "none");
         });
 
-
         rollerWorker.addEventListener("message", function(e){
           var type = e.data.type;
           var message = e.data.message;
           if(type==="messenger"){
-            messenger(message);
+            d3.select("#statusMessage").html(message);
           } else if(type==="rolled"){
             d3.select("#output").property("value", message);
             d3.select("#statusMessage").html("Finished Rolling!");
@@ -237,7 +226,8 @@
         });
 
         d3.select("#buildButton").on("click", function(){
-          var symbols = {}, module;
+          var symbols = {};
+          var configjs;
           var format = d3.select("#exportType").property("value");
           preferredVersions = {};
           versionInputs.each(function(d){
@@ -250,18 +240,20 @@
             }
           });
           console.log(symbols);
+          configjs = npmroller.generateConfigFromExports(symbols);
+          console.log(configjs);
 
           rollerWorker.postMessage({
             type:"roll", 
             message: {
-              symbols: symbols,
+              configjs: configjs,
               format: format,
               preferredVersions: preferredVersions,
               moduleName: "d3"
             }
           });
         });
-        messenger({type:"status", message:"Ready to Roll"});
+        
       });
     </script>
   </body>
