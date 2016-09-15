@@ -10,7 +10,7 @@
     root[moduleName] = factory(root["npmloader"]);
   }
 }(this, function(npmloader){
-  var mainPackageUrl = "https://npmcdn.com/d3@latest/package.json";
+  var mainPackageUrl = "https://unpkg.com/d3@latest/package.json";
   var d3InfoLoader = {};
 
   var loadCoreModulesList = function(callback){
