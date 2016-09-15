@@ -158,9 +158,7 @@
       };
 
       var messenger = function(message){
-        if(message.type === 'status') {
-          statusMessage.innerHTML = message.message;
-        }
+        statusMessage.innerHTML = message;
       };
       
       rollButton.addEventListener("click", function(){
