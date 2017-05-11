@@ -34,8 +34,29 @@
       .expandSpan:hover, .clickable:hover {
         color: green;
       }
+      #warningMessage {
+        color: orange;
+        font-style: italic;
+      }
+
       .partiallyChecked{
         opacity: 0.5;
+      }
+
+      .spinner {
+        border: 2px solid #eee;
+        border-top: 2px solid #44e;
+        border-left: 2px solid #44e;
+        border-radius: 50%;
+        width: 12px;
+        display: inline-block;
+        height: 12px;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
       }
       label {
         cursor: pointer;
@@ -46,6 +67,7 @@
     </style>
   </head>
   <body>
+    <div id="initialLoad">Loading Module Information...<div class="spinner"></div></div>
     <div id="container"></div>
     <select id="exportType">
       <option value="umd">UMD</option>
@@ -57,38 +79,54 @@
     <button id="buildButton">Build</button>
     <span id="statusMessage"></span>
     <br />
+    <div id="warningMessage"></div>
     <textarea id="output" cols="60" rows="10" placeholder="File will be outputted here" readonly></textarea>
+    <br />
+    <button id="downloadButton" disabled>Download</button>
     <script src="./libs/d3.v3.min.js"></script>
     <script src="./libs/esprima.js"></script>
-    <script src="./libs/rollup.browser.js"></script>
     <script src="./js/npmloader.js"></script>
     <script src="./js/npmroller.js"></script>
     <script src="./js/d3InfoLoader.js"></script>
     <script>
-    // d3Roller.html prealpha; probably buggy
+    // d3Roller.html alpha; probably buggy
     // Copyright (c) Steve Tung All Rights Reserved
-      var rollerWorker = new Worker("js/rollerWorker.js");
-      var findParent = function(el, type, levels){
+      var rollerWorker = new Worker('js/rollerWorker.js');
+      var findParent = function (el, type, levels) {
         if(!el){
           return null;
         }
-        var par=el, i;
+        var par = el, i;
         levels = levels || 1;
         if(!type) {
           return el.parentNode;
         }
-        for(i=0; i<levels; i++){
+        for (i=0; i<levels; i++) {
           par = par.parentNode;
-          while(par && par.tagName.toLowerCase() !== type.toLowerCase()){
+          while (par && par.tagName.toLowerCase() !== type.toLowerCase()) {
             par = par.parentNode;
           }
         }
         return par;
       };
 
+      var messenger = function(message) {
+        if (message.type === 'status') {
+          d3.select('#statusMessage').html(message.message);
+        } else if (message.type === 'warning') {
+          d3.select('#warningMessage').append('div').html(message.message);
+        }
+      };
 
-      d3InfoLoader.loadModulesInfo({"d3-scale-chromatic": "latest"}, function(error, info){
-//      d3.json("data/d3Info.json", function(err, info){
+      messenger({type:'status', message:'Retrieving d3 package info...'});
+
+      d3InfoLoader.loadModulesInfo({'d3-scale-chromatic': 'latest'}, function (err, info) {
+//      d3.json('data/d3Info.json', function(err, info){
+        if(err) {
+          console.log(err);
+          d3.select('#intialLoad').text(err);
+          return;
+        }
       	var moduleDivs;
         var moduleHeaders;
         var moduleCheckboxSpans;
@@ -97,163 +135,177 @@
         var expandSpans;
         var submoduleDivs;
         var versionInputs;
-        var collapseText = " (collapse)";
-        var expandText = " (expand)";
+        var collapseText = ' (collapse)';
+        var expandText = ' (expand)';
         var preferredVersions = {};
         var numCols = 4;
         var i;
         var data = [];
-        info.forEach(function(item){
+        d3.select('#initialLoad').style('display', 'none');
+        info.forEach(function (item) {
           var symbolsList = item.exportSymbols;
           var symbolsMatrix = [];
           var symbolsRow;
           var i;
-          for(i=0; i<symbolsList.length; i++){
-            if(i%numCols === 0){
+          for (i = 0; i < symbolsList.length; i++) {
+            if (i%numCols === 0) {
               symbolsRow = [];
               symbolsMatrix.push(symbolsRow);
             }
             symbolsRow.push({name: symbolsList[i], moduleName: item.name});
           }
-          preferredVersions[item.name] = item.version || "latest";
+          preferredVersions[item.name] = item.version || 'latest';
           data.push({
             name: item.name,
             version: item.version,
             symbolsMatrix: symbolsMatrix
           });
         });
-        var styleModuleCheckbox = function(parentNode){
+        var styleModuleCheckbox = function (parentNode) {
           var parent = d3.select(parentNode);
           var allChecked = true;
           var allNotChecked = true;
-          parent.selectAll(".symbolCheckbox").each(function(){
-            if(d3.select(this).property("checked")){
+          parent.selectAll('.symbolCheckbox').each(function(){
+            if(d3.select(this).property('checked')){
               allNotChecked = false;
             } else {
-              allChecked = false;                
+              allChecked = false;
             }
           });
-          parent.select(".moduleCheckbox").classed("partiallyChecked", !(allNotChecked || allChecked)).property("checked", !allNotChecked);
+          parent.select('.moduleCheckbox').classed('partiallyChecked', !(allNotChecked || allChecked)).property('checked', !allNotChecked);
         };
-        d3.select("#container").append("span")
-          .text("(check all) ")
-          .classed("clickable", true)
-          .on("click", function(){
-            d3.selectAll(".moduleCheckbox").property("checked", true).classed("partiallyChecked", false);
-            d3.selectAll(".symbolCheckbox").property("checked", true);
+        d3.select('#container').append('span')
+          .text('(check all) ')
+          .classed('clickable', true)
+          .on('click', function(){
+            d3.selectAll('.moduleCheckbox').property('checked', true).classed('partiallyChecked', false);
+            d3.selectAll('.symbolCheckbox').property('checked', true);
           });
-        d3.select("#container").append("span")
-          .text(" (uncheck all)")
-          .classed("clickable", true)
-          .on("click", function(){
-            d3.selectAll(".moduleCheckbox").property("checked", false).classed("partiallyChecked", false);
-            d3.selectAll(".symbolCheckbox").property("checked", false);
+        d3.select('#container').append('span')
+          .text(' (uncheck all)')
+          .classed('clickable', true)
+          .on('click', function(){
+            d3.selectAll('.moduleCheckbox').property('checked', false).classed('partiallyChecked', false);
+            d3.selectAll('.symbolCheckbox').property('checked', false);
           });
-        moduleDivs = d3.select("#container")
-          .selectAll(".moduleDiv")
+        moduleDivs = d3.select('#container')
+          .selectAll('.moduleDiv')
           .data(data)
           .enter()
-            .append("div")
-            .classed("moduleDiv", true);
-        moduleHeaders = moduleDivs.append("div")
-          .classed("moduleHeader", true);
-        moduleCheckboxSpans = moduleHeaders.append("span").classed("moduleCheckboxSpan", true);         
-        moduleCheckboxSpans.append("input")
-            .attr("type", "checkbox")
-            .attr("id", function(d){return d.name+'-checkbox';})
-            .classed("moduleCheckbox", true)
-            .on("click", function(){
-              d3.select(findParent(this, "div", 2)).selectAll(".symbolCheckbox").property("checked", d3.select(this).property("checked"));
-              d3.select(this).classed("partiallyChecked", false);
+            .append('div')
+            .classed('moduleDiv', true);
+        moduleHeaders = moduleDivs.append('div')
+          .classed('moduleHeader', true);
+        moduleCheckboxSpans = moduleHeaders.append('span').classed('moduleCheckboxSpan', true);
+        moduleCheckboxSpans.append('input')
+            .attr('type', 'checkbox')
+            .attr('id', function(d){return d.name+'-checkbox';})
+            .classed('moduleCheckbox', true)
+            .on('click', function(){
+              d3.select(findParent(this, 'div', 2)).selectAll('.symbolCheckbox').property('checked', d3.select(this).property('checked'));
+              d3.select(this).classed('partiallyChecked', false);
             });
-        moduleCheckboxSpans.append("label")
-          .attr("for", function(d){return d.name+'-checkbox';})
-          .classed("module-label", true)
+        moduleCheckboxSpans.append('label')
+          .attr('for', function(d){return d.name+'-checkbox';})
+          .classed('module-label', true)
           .text(function(d){return d.name});
-        versionInputs = moduleHeaders.append("input")
-          .attr("size", "4")
-          .property("value", function(d){
+        versionInputs = moduleHeaders.append('input')
+          .attr('size', '4')
+          .property('value', function(d){
             return d.version;
           });
-        expandSpans = moduleHeaders.append("span")
+        expandSpans = moduleHeaders.append('span')
           .text(expandText)
-          .classed("expandSpan" , true)
-          .on("click", function(){
+          .classed('expandSpan' , true)
+          .on('click', function(){
             var el = d3.select(this);
+            var submoduleDiv = d3.select(findParent(this, 'div', 2)).select('.submoduleDiv');
             if(el.text()===collapseText){
-              d3.select(findParent(this, "div", 2)).select(".submoduleDiv").style("display", "none");
+              submoduleDiv.style('display', 'none');
               el.text(expandText);
             } else {
-              d3.select(findParent(this, "div", 2)).select(".submoduleDiv").style("display", "block");
+              submoduleDiv.style('display', 'block');
               el.text(collapseText);
             }
           });
-        submoduleDivs = moduleDivs.append("div").attr("class","submoduleDiv");
-        submoduleTables = submoduleDivs.append("table").attr("class","submodulesTable");
+        submoduleDivs = moduleDivs.append('div').attr('class','submoduleDiv');
+        submoduleTables = submoduleDivs.append('table').attr('class','submodulesTable');
         checkboxCells = submoduleTables
-          .selectAll("tr")
+          .selectAll('tr')
           .data(function(d){return d.symbolsMatrix;})
             .enter()
-            .append("tr")
-              .selectAll("td")
+            .append('tr')
+              .selectAll('td')
               .data(function(d){return d;})
                 .enter()
-                .append("td");
-        checkboxCells.append("input")
-          .attr("type", "checkbox")
-          .attr("id", function(d){return d.name+'-checkbox';})
-          .classed("symbolCheckbox", true)
-          .on("click", function(){
-            styleModuleCheckbox(findParent(this, "div", 2));
+                .append('td');
+        checkboxCells.append('input')
+          .attr('type', 'checkbox')
+          .attr('id', function(d){return d.name+'-checkbox';})
+          .classed('symbolCheckbox', true)
+          .on('click', function(){
+            styleModuleCheckbox(findParent(this, 'div', 2));
           });
-        checkboxCells.append("label")
-          .attr("for", function(d){return d.name+'-checkbox';})
+        checkboxCells.append('label')
+          .attr('for', function(d){return d.name+'-checkbox';})
           .text(function(d){return d.name;});
 
         expandSpans.each(function(){
-          d3.select(findParent(this, "div", 2)).select(".submoduleDiv").style("display", d3.select(this).text()===collapseText ? "block" : "none");
+          d3.select(findParent(this, 'div', 2)).select('.submoduleDiv').style('display', d3.select(this).text()===collapseText ? 'block' : 'none');
         });
 
-        rollerWorker.addEventListener("message", function(e){
+
+        d3.select('#downloadButton').on('click', function() {
+          var el = d3.select('body').append('a');
+          var content = d3.select('#output').property('value');
+          el.attr('href', window.URL.createObjectURL(new Blob([content]),
+            {type: 'application/javascript'}));
+          el.attr('download', 'd3.v4.custom.js');
+          el.node().click();
+          el.remove();
+        });
+
+
+        rollerWorker.addEventListener('message', function(e){
           var type = e.data.type;
           var message = e.data.message;
-          if(type==="messenger"){
-            d3.select("#statusMessage").html(message);
-          } else if(type==="rolled"){
-            d3.select("#output").property("value", message);
-            d3.select("#statusMessage").html("Finished Rolling!");
+          if (type==='messenger') {
+            messenger(message);
+          } else if(type==='rolled') {
+            d3.select('#output').property('value', message);
+            d3.select('#downloadButton').attr('disabled', null);
+            d3.select('#statusMessage').html('Finished Rolling!');
           }
         });
 
-        d3.select("#buildButton").on("click", function(){
-          var symbols = {};
-          var configjs;
-          var format = d3.select("#exportType").property("value");
+
+        d3.select('#buildButton').on('click', function() {
+          var symbols = {}, module;
+          var format = d3.select('#exportType').property('value');
+          d3.select('#warningMessage').html('');
+          d3.select('#output').property('value', 'Rolling file...');
+          d3.select('#downloadButton').attr('disabled', true);
           preferredVersions = {};
           versionInputs.each(function(d){
-            preferredVersions[d.name] = d3.select(this).property("value");
+            preferredVersions[d.name] = d3.select(this).property('value');
           });
-          d3.selectAll(".symbolCheckbox").each(function(d){
-            if(d3.select(this).property("checked")){
+          d3.selectAll('.symbolCheckbox').each(function(d){
+            if(d3.select(this).property('checked')){
               symbols[d.moduleName] = symbols[d.moduleName] || [];
               symbols[d.moduleName].push(d.name);
             }
           });
-          console.log(symbols);
-          configjs = npmroller.generateConfigFromExports(symbols);
-          console.log(configjs);
-
           rollerWorker.postMessage({
-            type:"roll", 
+            type:'roll',
             message: {
-              configjs: configjs,
+              symbols: symbols,
               format: format,
               preferredVersions: preferredVersions,
-              moduleName: "d3"
+              moduleName: 'd3'
             }
           });
         });
-        
+        messenger({type:'status', message:'Ready to Roll'});
       });
     </script>
   </body>

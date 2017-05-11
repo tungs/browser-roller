@@ -1,13 +1,14 @@
 [
   {
     "name": "d3-array",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "exportSymbols": [
       "bisect",
       "bisectRight",
       "bisectLeft",
       "ascending",
       "bisector",
+      "cross",
       "descending",
       "deviation",
       "extent",
@@ -28,6 +29,7 @@
       "shuffle",
       "sum",
       "ticks",
+      "tickIncrement",
       "tickStep",
       "transpose",
       "variance",
@@ -36,7 +38,7 @@
   },
   {
     "name": "d3-axis",
-    "version": "1.0.0",
+    "version": "1.0.6",
     "exportSymbols": [
       "axisTop",
       "axisRight",
@@ -46,7 +48,7 @@
   },
   {
     "name": "d3-brush",
-    "version": "1.0.1",
+    "version": "1.0.4",
     "exportSymbols": [
       "brush",
       "brushX",
@@ -62,8 +64,20 @@
     }
   },
   {
+    "name": "d3-chord",
+    "version": "1.0.4",
+    "exportSymbols": [
+      "chord",
+      "ribbon"
+    ],
+    "dependencies": {
+      "d3-array": "1",
+      "d3-path": "1"
+    }
+  },
+  {
     "name": "d3-collection",
-    "version": "1.0.0",
+    "version": "1.0.3",
     "exportSymbols": [
       "nest",
       "set",
@@ -75,7 +89,7 @@
   },
   {
     "name": "d3-color",
-    "version": "1.0.0",
+    "version": "1.0.3",
     "exportSymbols": [
       "color",
       "rgb",
@@ -87,14 +101,14 @@
   },
   {
     "name": "d3-dispatch",
-    "version": "1.0.0",
+    "version": "1.0.3",
     "exportSymbols": [
       "dispatch"
     ]
   },
   {
     "name": "d3-drag",
-    "version": "1.0.0",
+    "version": "1.0.4",
     "exportSymbols": [
       "drag",
       "dragDisable",
@@ -107,7 +121,7 @@
   },
   {
     "name": "d3-dsv",
-    "version": "1.0.0",
+    "version": "1.0.5",
     "exportSymbols": [
       "dsvFormat",
       "csvParse",
@@ -120,12 +134,14 @@
       "tsvFormatRows"
     ],
     "dependencies": {
+      "commander": "2",
+      "iconv-lite": "0.4",
       "rw": "1"
     }
   },
   {
     "name": "d3-ease",
-    "version": "1.0.0",
+    "version": "1.0.3",
     "exportSymbols": [
       "easeLinear",
       "easeQuad",
@@ -168,7 +184,7 @@
   },
   {
     "name": "d3-force",
-    "version": "1.0.0",
+    "version": "1.0.6",
     "exportSymbols": [
       "forceCenter",
       "forceCollide",
@@ -187,7 +203,7 @@
   },
   {
     "name": "d3-format",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "exportSymbols": [
       "formatDefaultLocale",
       "format",
@@ -201,33 +217,47 @@
   },
   {
     "name": "d3-geo",
-    "version": "1.0.0",
+    "version": "1.6.3",
     "exportSymbols": [
       "geoArea",
       "geoBounds",
       "geoCentroid",
       "geoCircle",
       "geoClipExtent",
+      "geoContains",
       "geoDistance",
       "geoGraticule",
+      "geoGraticule10",
       "geoInterpolate",
       "geoLength",
       "geoPath",
       "geoAlbers",
       "geoAlbersUsa",
       "geoAzimuthalEqualArea",
+      "geoAzimuthalEqualAreaRaw",
       "geoAzimuthalEquidistant",
+      "geoAzimuthalEquidistantRaw",
       "geoConicConformal",
+      "geoConicConformalRaw",
       "geoConicEqualArea",
+      "geoConicEqualAreaRaw",
       "geoConicEquidistant",
+      "geoConicEquidistantRaw",
       "geoEquirectangular",
+      "geoEquirectangularRaw",
       "geoGnomonic",
+      "geoGnomonicRaw",
+      "geoIdentity",
       "geoProjection",
       "geoProjectionMutator",
       "geoMercator",
+      "geoMercatorRaw",
       "geoOrthographic",
+      "geoOrthographicRaw",
       "geoStereographic",
+      "geoStereographicRaw",
       "geoTransverseMercator",
+      "geoTransverseMercatorRaw",
       "geoRotation",
       "geoStream",
       "geoTransform"
@@ -238,7 +268,7 @@
   },
   {
     "name": "d3-hierarchy",
-    "version": "1.0.0",
+    "version": "1.1.4",
     "exportSymbols": [
       "cluster",
       "hierarchy",
@@ -259,12 +289,13 @@
   },
   {
     "name": "d3-interpolate",
-    "version": "1.0.0",
+    "version": "1.1.4",
     "exportSymbols": [
       "interpolate",
       "interpolateArray",
       "interpolateBasis",
       "interpolateBasisClosed",
+      "interpolateDate",
       "interpolateNumber",
       "interpolateObject",
       "interpolateRound",
@@ -290,14 +321,14 @@
   },
   {
     "name": "d3-path",
-    "version": "1.0.0",
+    "version": "1.0.5",
     "exportSymbols": [
       "path"
     ]
   },
   {
     "name": "d3-polygon",
-    "version": "1.0.0",
+    "version": "1.0.3",
     "exportSymbols": [
       "polygonArea",
       "polygonCentroid",
@@ -308,21 +339,21 @@
   },
   {
     "name": "d3-quadtree",
-    "version": "1.0.0",
+    "version": "1.0.3",
     "exportSymbols": [
       "quadtree"
     ]
   },
   {
     "name": "d3-queue",
-    "version": "3.0.1",
+    "version": "3.0.5",
     "exportSymbols": [
       "queue"
     ]
   },
   {
     "name": "d3-random",
-    "version": "1.0.0",
+    "version": "1.0.3",
     "exportSymbols": [
       "randomUniform",
       "randomNormal",
@@ -334,7 +365,7 @@
   },
   {
     "name": "d3-request",
-    "version": "1.0.0",
+    "version": "1.0.5",
     "exportSymbols": [
       "request",
       "html",
@@ -353,7 +384,7 @@
   },
   {
     "name": "d3-scale",
-    "version": "1.0.0",
+    "version": "1.0.5",
     "exportSymbols": [
       "scaleBand",
       "scalePoint",
@@ -395,7 +426,7 @@
   },
   {
     "name": "d3-selection",
-    "version": "1.0.0",
+    "version": "1.0.5",
     "exportSymbols": [
       "creator",
       "local",
@@ -417,7 +448,7 @@
   },
   {
     "name": "d3-shape",
-    "version": "1.0.0",
+    "version": "1.0.6",
     "exportSymbols": [
       "arc",
       "area",
@@ -469,7 +500,7 @@
   },
   {
     "name": "d3-time",
-    "version": "1.0.0",
+    "version": "1.0.6",
     "exportSymbols": [
       "timeInterval",
       "timeMillisecond",
@@ -536,7 +567,7 @@
   },
   {
     "name": "d3-time-format",
-    "version": "2.0.0",
+    "version": "2.0.5",
     "exportSymbols": [
       "timeFormatDefaultLocale",
       "timeFormat",
@@ -553,7 +584,7 @@
   },
   {
     "name": "d3-timer",
-    "version": "1.0.0",
+    "version": "1.0.5",
     "exportSymbols": [
       "now",
       "timer",
@@ -564,7 +595,7 @@
   },
   {
     "name": "d3-transition",
-    "version": "1.0.0",
+    "version": "1.0.4",
     "exportSymbols": [
       "transition",
       "active",
@@ -581,14 +612,14 @@
   },
   {
     "name": "d3-voronoi",
-    "version": "1.0.0",
+    "version": "1.1.2",
     "exportSymbols": [
       "voronoi"
     ]
   },
   {
     "name": "d3-zoom",
-    "version": "1.0.1",
+    "version": "1.1.4",
     "exportSymbols": [
       "zoom",
       "zoomTransform",
@@ -604,7 +635,7 @@
   },
   {
     "name": "d3-scale-chromatic",
-    "version": "1.0.0",
+    "version": "1.1.1",
     "exportSymbols": [
       "schemeAccent",
       "schemeDark2",
@@ -615,32 +646,59 @@
       "schemeSet2",
       "schemeSet3",
       "interpolateBrBG",
+      "schemeBrBG",
       "interpolatePRGn",
+      "schemePRGn",
       "interpolatePiYG",
+      "schemePiYG",
       "interpolatePuOr",
+      "schemePuOr",
       "interpolateRdBu",
+      "schemeRdBu",
       "interpolateRdGy",
+      "schemeRdGy",
       "interpolateRdYlBu",
+      "schemeRdYlBu",
       "interpolateRdYlGn",
+      "schemeRdYlGn",
       "interpolateSpectral",
+      "schemeSpectral",
       "interpolateBuGn",
+      "schemeBuGn",
       "interpolateBuPu",
+      "schemeBuPu",
       "interpolateGnBu",
+      "schemeGnBu",
       "interpolateOrRd",
+      "schemeOrRd",
       "interpolatePuBuGn",
+      "schemePuBuGn",
       "interpolatePuBu",
+      "schemePuBu",
       "interpolatePuRd",
+      "schemePuRd",
       "interpolateRdPu",
+      "schemeRdPu",
       "interpolateYlGnBu",
+      "schemeYlGnBu",
       "interpolateYlGn",
+      "schemeYlGn",
       "interpolateYlOrBr",
+      "schemeYlOrBr",
       "interpolateYlOrRd",
+      "schemeYlOrRd",
       "interpolateBlues",
+      "schemeBlues",
       "interpolateGreens",
+      "schemeGreens",
       "interpolateGreys",
+      "schemeGreys",
       "interpolatePurples",
+      "schemePurples",
       "interpolateReds",
-      "interpolateOranges"
+      "schemeReds",
+      "interpolateOranges",
+      "schemeOranges"
     ],
     "dependencies": {
       "d3-interpolate": "1"
