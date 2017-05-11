@@ -19,7 +19,7 @@
         bottom: 20px;
       }
       #inputPanel {
-        left: 0;        
+        left: 0;
         width: 50%;
       }
       #outputPanel{
@@ -41,12 +41,12 @@
       .panelHeader {
         font: 16px "Open Sans", sans-serif;
         top: 0px;
-        height: 20px;        
+        height: 20px;
       }
 
       .panelBody{
         top: 20px;
-        bottom: 0;        
+        bottom: 0;
       }
 
       #optionsSection {
@@ -56,7 +56,7 @@
 
       #versionsPanel{
         top: 0px;
-        height: 50%;        
+        height: 50%;
       }
 
       #otherOptionsPanel{
@@ -114,11 +114,12 @@
     <script src="./libs/d3.v3.min.js"></script>
     <script src="./libs/esprima.js"></script>
     <script src="./libs/rollup.browser.js"></script>
+    <script src="./libs/semver.browser.js"></script>
     <script src="./js/npmloader.js"></script>
     <script src="./js/npmroller.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.2.3/ace.js"></script>
     <script>
-    // browserRoller.html prealpha; probably buggy
+    // browserRoller.html alpha; probably buggy
     // Copyright (c) Steve Tung All Rights Reserved
 
       var editor = ace.edit("editor");
@@ -158,9 +159,11 @@
       };
 
       var messenger = function(message){
-        statusMessage.innerHTML = message;
+        if(message.type === 'status') {
+          statusMessage.innerHTML = message.message;
+        }
       };
-      
+
       rollButton.addEventListener("click", function(){
         saveToFragment();
         var options = JSON.parse(otherOptions.getValue().trim() || '{}');

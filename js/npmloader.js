@@ -1,4 +1,4 @@
-// npmloader prealpha; probably buggy
+// npmloader alpha; probably buggy
 // Copyright (c) Steve Tung All Rights Reserved
 
 (function(root, factory){
@@ -10,7 +10,8 @@
     // in node environment
     node_https = require("https");
     node_url = require("url");
-    fileDownloader = function(url, callback){
+    fileDownloader = function (url, callback) {
+      var ret = {};
       node_https.get(url, function(response){
         var redirectUrl;
         var messageArray=[];
@@ -26,9 +27,9 @@
           console.log('redirecting', redirectUrl);
           fileDownloader(redirectUrl, callback);
         }
-      }).on('error', function(error){
+      }).on('error', function (error) {
         callback(error, null);
-      }).end();      
+      }).end();
     };
   } else {
     fileDownloader = function(url, callback){
@@ -45,14 +46,14 @@
       xhr.open("GET", url);
       xhr.send();
       return xhr;
-    }    
+    }
   }
 
 	if(typeof define === "function" && define.amd){
 		define(["esprima"],function(esprima){
 			return (root[moduleName] = factory(fileDownloader, esprima));
 		});
-	} else if(typeof module ==="object" && module.exports){    
+	} else if(typeof module ==="object" && module.exports){
 		module.exports = (root[moduleName] = factory(fileDownloader, require("esprima")));
 	} else {
 		root[moduleName] = factory(fileDownloader, root["esprima"]);
@@ -61,63 +62,60 @@
 	var npmloader = {
     _cache: false
   };
-  var npmCDNBaseUrl = "https://unpkg.com/";
-  npmloader.baseUrl = npmCDNBaseUrl;
+  var unpkgBaseUrl = "https://unpkg.com/";
+  npmloader.baseUrl = unpkgBaseUrl;
 
   var moduleList = [];
   var modules = {};
   var cache = {};
 
+  var addCallback = function(p, callback){
+    return callback ? p.then(function(data){ callback(null, data); }, function(err){ callback(err, null); }) : p;
+  };
+  npmloader.addCallback = addCallback;
+
   var generateModuleUrl = function(moduleName, version){
-    return npmCDNBaseUrl + moduleName + (version ? '@' + version : '');
+    return unpkgBaseUrl + moduleName + (version ? '@' + version : '');
   };
   npmloader.generateModuleUrl = generateModuleUrl;
 
   var retrieveFile = function(fileUrl, callback){
-    console.log("Retrieving: "+fileUrl);
+//    console.log("Retrieving: "+fileUrl);
     var request;
     var cancel = false;
     var ret;
-    var requestFile = function(cb){
-      if(npmloader._cache && fileUrl in cache){
-        cb(null, cache[fileUrl]);
-        return;
-      }
-      request = fileDownloader(fileUrl, function(error, text){
-        if(error) // should have finer error handling
-        {
-          console.warn("Error Requesting File " + fileUrl, error);
-          if(!cancel) {
-            cb(error, null);
-/*
-            console.log("Retrying in 60 seconds");
-            setTimeout(requestFile, 60000);
-*/
-          }
-        } else {
-          if(npmloader._cache){
-            cache[fileUrl] = text;
-          }
-          if(!cancel){
-            cb(error, text);
-          }
+
+    var ret = addCallback(new Promise(function(resolve, reject){
+      var requestFile = function(){
+        if(npmloader._cache && fileUrl in cache){
+          resolve(cache[fileUrl]);
+          return;
         }
-      });
-    }
-    if(callback){
-      ret = {};
-      requestFile(callback);
-    } else {
-      ret = new Promise(function(resolve, reject){
-        requestFile(function(err, data){
-          if(err){
-            reject(err);
+        request = fileDownloader(fileUrl, function(error, text){
+          if (error) { // should have finer error handling
+            console.warn("Error Requesting File " + fileUrl, error);
+            if(!cancel) {
+              if (request && request.status === 404) {
+                reject (new NotFoundError('File not found ' + fileUrl));
+              } else {
+                reject(error);
+              }
+            }
           } else {
-            resolve(data);
+            if(npmloader._cache){
+              cache[fileUrl] = text;
+            }
+            if(!cancel){
+              resolve(text);
+            } else {
+              reject(new Error("Request to "+fileUrl+" canceled"));
+            }
           }
         });
-      });
-    }
+      }
+      requestFile();
+    }), callback);
+
     ret.cancel = function(){
         cancel = true;
         if(request){
@@ -131,19 +129,29 @@
   };
   npmloader.retrieveFile = retrieveFile;
 
+  var NotFoundError = function(message) {
+    this.message = message;
+    this.stack = (new Error()).stack;
+  }
+
+  NotFoundError.prototype = Object.create(Error.prototype);
+  NotFoundError.prototype.name = 'FileNotFoundError';
+  NotFoundError.prototype.constructor = NotFoundError;
+  npmloader.NotFoundError = NotFoundError;
+
   var retrieveJSON = function(fileUrl, callback){
-    if(callback){
-      return retrieveFile(fileUrl, function(error, text){
-        callback(error, text ? JSON.parse(text) : null);
-      });      
-    } else {
-      return retrieveFile(fileUrl).then(function(text){
-        return text ? JSON.parse(text) : null;
-      });
-    }
+    return addCallback(retrieveFile(fileUrl)
+      .then(function(text){
+        var ret = null;
+        try {
+          ret = JSON.parse(text);
+        } catch(e) {
+          throw new NotFoundError(fileUrl + " was not found!");
+        }
+        return ret;
+      }), callback);
   };
   npmloader.retrieveJSON = retrieveJSON;
-
 
   var retrieveModuleFile = function(moduleName, version, filepath, callback){
     return retrieveFile(generateModuleUrl(moduleName, version) + '/'+ filepath, callback);
@@ -165,29 +173,6 @@
   };
   npmloader.retrieveModuleDirectory = retrieveModuleDirectory;
 
-  var iterateList = function(list, iteration, itemCallback, callback){
-    var toLoad = list.length, i, hasError = false;
-    var loaded = function(ind, queryItem){
-      return function(err){
-        if(hasError){
-          return;
-        }
-        if(err){
-          hasError = true;
-          callback(err);
-        }
-        itemCallback.apply(this, [ind, queryItem].concat(Array.prototype.slice.call(arguments, 1)));
-        toLoad--;
-        if(!toLoad){
-          callback(err);
-        }
-      };
-    }
-    for(i=0;i<list.length;i++){
-      iteration(list[i], loaded(i, list[i]));
-    };
-  };
-
   var isArray = (Array && Array.isArray) ? Array.isArray : function(obj){
     return Object.prototype.toString(obj) === "[object Array]"; // this does not work in Node!
   };
@@ -196,11 +181,7 @@
     var moduleList = [], key;
     if(isArray(obj)){
       moduleList = obj.map(function(item){
-        if(typeof item === 'string'){
-          return {name: item, version: null}
-        } else {
-          return item;
-        }
+        return typeof item === 'string' ? {name: item, version: null} : item;
       });
     } else if(typeof obj === typeof {}){
       for(key in obj){
@@ -212,18 +193,6 @@
     return moduleList;
   };
   npmloader.resolveToModuleList = resolveToModuleList;
-
-  var iterateModuleList = function(moduleObj, moduleProcessor, callback){
-    var moduleList = resolveToModuleList(moduleObj);
-    var modules = [];
-    return iterateList(moduleList, function(listItem, cb){
-      moduleProcessor(listItem, cb);
-    }, function(ind, queryItem, retrievedItem){
-      modules[ind] = retrievedItem;
-    }, function(err){
-      callback(err, modules);
-    });
-  };
 
   var parseExportSymbols = function(src) {
     var symbols = [];
@@ -239,7 +208,7 @@
                 name: specifiers[j].exported.name,
                 local: specifiers[j].local.name,
                 from: prog.body[i].source.value
-              })
+              });
             }
           }
         }
@@ -249,90 +218,33 @@
   };
 
   var retrieveModuleExports = function(moduleName, version, callback){
-    if(callback){
-      return retrieveModuleFile(moduleName, version, 'index.js', function(err, text){
-        if(err){
-          callback(err, null);
-        } else {
-          callback(err, parseExportSymbols(text));
-        }
-      });      
-    } else {
-      return retrieveModuleFile(moduleName, version, 'index.js').then(parseExportSymbols);
-    }
+    return addCallback(retrieveModuleFile(moduleName, version, 'index.js').then(parseExportSymbols), callback);
   };
   npmloader.retrieveModuleExports = retrieveModuleExports;
 
   var retrieveModuleInfo = function(moduleName, version, callback){
-    var info = {};
-    var hasError = false;
-    var toLoad = 2;
-    var cbgen = function(processor) {
-      return function(err, data){
-        if(hasError){
-          // calback already called
-          return;
-        }
-        if(err){
-          hasError = true;
-          callback(err, null);
-          return;
-        }
-        processor(data);
-        toLoad--;
-        if(!toLoad){
-          callback(err, info);
-        }        
-      }
-    };
-
-    retrieveModulePackage(moduleName, version, cbgen(function(pack){
-      var key;
-      for(key in pack){
-        if(pack.hasOwnProperty(key)){
-          info[key] = pack[key];
-        }
-      }
-    }));
-
-    retrieveModuleExports(moduleName, version, cbgen(function(symbols){
-      info.exportSymbols = symbols.map(function(item){
-        return item.name;
-      });
-    }));
-  };
-  npmloader.retrieveModuleInfo = retrieveModuleInfo;
-
-  var retrieveModuleInfoPromise = function(moduleName, version){
-    return Promise.all([retrieveModulePackage(moduleName,version), retrieveModuleExports(moduleName,version)]).then(function(data){
+    return addCallback(Promise.all([retrieveModulePackage(moduleName,version), retrieveModuleExports(moduleName,version)]).then(function(data){
       var info = {}, key, pack = data[0], symbols = data[1];
       for(key in pack){
         if(pack.hasOwnProperty(key)){
           info[key] = pack[key];
-        }        
+        }
       }
       info.exportSymbols = symbols.map(function(item){
         return item.name;
       });
       return info;
-    });
+    }), callback);
   };
-  npmloader.retrieveModuleInfoPromise = retrieveModuleInfoPromise;
+  npmloader.retrieveModuleInfo = retrieveModuleInfo;
 
 
   var retrieveModulesInfo = function(moduleList, callback){
-    return iterateModuleList(moduleList, function(listItem, cb){
-      retrieveModuleInfo(listItem.name, listItem.version, cb);
-    }, callback);
+    return addCallback(Promise.all(moduleList.map(function(module){
+      return retrieveModuleInfo(module.name, module.version);
+    })), callback);
   };
   npmloader.retrieveModulesInfo = retrieveModulesInfo;
-
-  var retrieveModulesInfoPromise = function(moduleList){
-    return Promise.all(moduleList.map(function(module){
-      return retrieveModuleInfoPromise(module.name, module.version);
-    }));
-  };
-  npmloader.retrieveModulesInfoPromise = retrieveModulesInfoPromise;
 
 	return npmloader;
 }));
